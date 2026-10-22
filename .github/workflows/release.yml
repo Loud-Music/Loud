@@ -4,12 +4,19 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Build platforms
+        type: choice
+        options: [all, windows, linux]
+        default: all
 
 permissions:
   contents: write
 
 jobs:
   windows:
+    if: ${{ inputs.platform != 'linux' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,3 +48,66 @@ jobs:
           gh release upload $tag src-tauri/target/release/bundle/nsis/*.exe src-tauri/target/release/bundle/nsis/*.sig src-tauri/target/release/bundle/nsis/latest.json src-tauri/target/release/bundle/nsis/SHA256SUMS.txt --clobber
           if ($LASTEXITCODE -ne 0) { throw "Release upload failed" }
           gh release edit $tag --draft=false --latest
+  linux:
+    needs: windows
+    if: ${{ always() && !cancelled() && (needs.windows.result == 'success' || needs.windows.result == 'skipped') && inputs.platform != 'windows' }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2 xvfb gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav libnss3 libnspr4 libgbm1 libasound2
+      - run: npm ci
+      - name: Build packages
+        run: npm run tauri build -- --bundles deb,appimage
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - name: Verify first launch and media tools
+        run: |
+          export LOUD_PROFILE_DIR="$(mktemp -d)"
+          printf 'Loud profile\n' > "$LOUD_PROFILE_DIR/.loud-profile"
+          mkdir -p "$LOUD_PROFILE_DIR/user-data"
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; writeFileSync(process.env.LOUD_PROFILE_DIR+"/user-data/settings.json", JSON.stringify({"loud:accounts:v1":JSON.stringify([{id:"legacy",name:"Linux build",created:Date.now()}]),"loud:last-account":"legacy"}));'
+          xvfb-run -a bash -e -c '
+            src-tauri/target/release/loud-platform > "$LOUD_PROFILE_DIR/startup.log" 2>&1 &
+            app_pid=$!
+            trap "kill $app_pid 2>/dev/null || true" EXIT
+            for i in $(seq 1 240); do
+              kill -0 "$app_pid" || { cat "$LOUD_PROFILE_DIR/startup.log"; exit 1; }
+              if [ -f "$LOUD_PROFILE_DIR/tools/music-module/music-runtime-v2.ready" ] && [ -x "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/yt-dlp" ] && [ -x "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffprobe" ]; then break; fi
+              sleep 1
+            done
+            test -f "$LOUD_PROFILE_DIR/tools/music-module/music-runtime-v2.ready"
+            "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffmpeg" -version
+            "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffprobe" -version
+            "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/yt-dlp" --version
+            "$LOUD_PROFILE_DIR/tools/music-module/env/bin/python3" -c "import spotiflac, json5, playwright.sync_api"
+          '
+          src-tauri/target/release/bundle/appimage/*.AppImage --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          dpkg-deb --info src-tauri/target/release/bundle/deb/*.deb
+          gst-inspect-1.0 flacdec
+          gst-inspect-1.0 avdec_aac
+          gst-inspect-1.0 mpg123audiodec
+      - name: Publish Linux packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          mkdir -p .release/linux
+          git archive --format=tar.gz --prefix="Loud-$version/" HEAD > ".release/linux/Loud-$version-linux-source.tar.gz"
+          gh release download "v$version" --pattern latest.json --dir .release/linux
+          gh release download "v$version" --pattern SHA256SUMS.txt --dir .release/linux
+          node scripts/linux-manifest.mjs
+          gh release upload "v$version" src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/*.sig ".release/linux/Loud-$version-linux-source.tar.gz" .release/linux/SHA256SUMS-linux.txt --clobber
+          gh release upload "v$version" .release/linux/latest.json .release/linux/SHA256SUMS.txt --clobber

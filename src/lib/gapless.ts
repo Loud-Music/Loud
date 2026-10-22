@@ -17,7 +17,8 @@ export async function prepareGapless(track: Track): Promise<GaplessResource> {
     throw new Error("Gapless source is not ready");
   const url = new URL(track.src);
   const path =
-    url.hostname === "asset.localhost"
+    url.hostname === "asset.localhost" ||
+    (url.protocol === "asset:" && url.hostname === "localhost")
       ? decodeURIComponent(url.pathname.slice(1))
       : undefined;
   const resource = await invoke<GaplessResource>("gapless_prepare", {

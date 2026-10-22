@@ -148,6 +148,7 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
         return Ok(());
     }
     let header = String::from_utf8(header)?;
+    let origin = crate::network::audio_origin(&header);
     let mut lines = header.split("\r\n");
     let request: Vec<_> = lines.next().unwrap_or("").split_whitespace().collect();
     if request.len() != 3 || !matches!(request[0], "GET" | "HEAD") {
@@ -214,7 +215,7 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
                 }
             }
             if start > end || start >= size {
-                write!(socket, "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{size}\r\nAccess-Control-Allow-Origin: http://tauri.localhost\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
+                write!(socket, "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{size}\r\nAccess-Control-Allow-Origin: {origin}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
                 return Ok(());
             }
             partial = true;
@@ -231,7 +232,7 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
         "audio/mpeg"
     };
     let streaming_range = !completed && total.is_some() && range.as_deref() == Some("bytes=0-");
-    write!(socket, "HTTP/1.1 {}\r\nContent-Type: {mime}\r\nAccess-Control-Allow-Origin: http://tauri.localhost\r\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length\r\nCache-Control: no-store\r\nConnection: close\r\n", if partial || streaming_range { "206 Partial Content" } else { "200 OK" })?;
+    write!(socket, "HTTP/1.1 {}\r\nContent-Type: {mime}\r\nAccess-Control-Allow-Origin: {origin}\r\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length\r\nCache-Control: no-store\r\nConnection: close\r\n", if partial || streaming_range { "206 Partial Content" } else { "200 OK" })?;
     if completed {
         write!(
             socket,

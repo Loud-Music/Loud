@@ -59,6 +59,7 @@ fn serve(mut socket: TcpStream, entries: Entries) -> Result<(), Box<dyn std::err
         }
     }
     let text = String::from_utf8(request)?;
+    let origin = crate::network::audio_origin(&text);
     let mut first = text.lines().next().unwrap_or("").split_whitespace();
     if first.next() != Some("GET") {
         return Ok(());
@@ -76,7 +77,7 @@ fn serve(mut socket: TcpStream, entries: Entries) -> Result<(), Box<dyn std::err
         return Ok(());
     };
     let mut file = fs::File::open(&entry.path)?;
-    socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: audio/mp4\r\nAccess-Control-Allow-Origin: http://tauri.localhost\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n")?;
+    write!(socket, "HTTP/1.1 200 OK\r\nContent-Type: audio/mp4\r\nAccess-Control-Allow-Origin: {origin}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n")?;
     socket.flush()?;
     let mut buffer = [0; 65536];
     loop {

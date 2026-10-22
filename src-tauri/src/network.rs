@@ -380,3 +380,19 @@ pub fn show_music_folder(app: tauri::AppHandle) -> Result<(), String> {
         Err("Folder navigation is available on Windows".into())
     }
 }
+
+pub fn audio_origin(request: &str) -> &str {
+    request
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find_map(|(name, value)| {
+            let origin = value.trim();
+            (name.eq_ignore_ascii_case("origin")
+                && matches!(
+                    origin,
+                    "http://tauri.localhost" | "https://tauri.localhost" | "tauri://localhost"
+                ))
+            .then_some(origin)
+        })
+        .unwrap_or("http://tauri.localhost")
+}

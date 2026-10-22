@@ -1,0 +1,22 @@
+{
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "linux": {
+      "deb": {
+        "depends": [
+          "gstreamer1.0-plugins-good",
+          "gstreamer1.0-plugins-bad",
+          "gstreamer1.0-plugins-ugly",
+          "gstreamer1.0-libav",
+          "libnss3",
+          "libnspr4",
+          "libgbm1",
+          "libasound2 | libasound2t64"
+        ]
+      },
+      "appimage": {
+        "bundleMediaFramework": true
+      }
+    }
+  }
+}
