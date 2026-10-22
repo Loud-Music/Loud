@@ -40,6 +40,26 @@ fn set_window_material(app: tauri::AppHandle, dark: bool) -> Result<String, Stri
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPDIR").is_some()
+        && std::env::var_os("GST_REGISTRY_1_0").is_none()
+        && std::env::var_os("GST_REGISTRY").is_none()
+    {
+        let cache = std::env::var_os("XDG_CACHE_HOME")
+            .map(std::path::PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .map(std::path::PathBuf::from)
+                    .filter(|path| path.is_absolute())
+                    .map(|path| path.join(".cache"))
+            })
+            .unwrap_or_else(std::env::temp_dir)
+            .join("com.loud.platform/gstreamer");
+        if std::fs::create_dir_all(&cache).is_ok() {
+            std::env::set_var("GST_REGISTRY_1_0", cache.join("appimage-registry.bin"));
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

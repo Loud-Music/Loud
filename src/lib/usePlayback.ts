@@ -50,6 +50,8 @@ const idle: OutputStatus = {
 };
 export const exclusiveAvailable = () =>
   isDesktop() && /Windows/i.test(navigator.userAgent);
+const analysePlayback = () =>
+  !isDesktop() || !/Linux/i.test(navigator.userAgent);
 export default function usePlayback(
   track: Track,
   notify: (message: string) => void,
@@ -109,7 +111,11 @@ export default function usePlayback(
   useEffect(() => {
     const element = audio.current;
     if (!element) return;
-    if (!exclusive && (playing || equalizer.enabled) && !eqGraph.current) {
+    if (
+      !exclusive &&
+      (equalizer.enabled || (playing && analysePlayback())) &&
+      !eqGraph.current
+    ) {
       try {
         eqGraph.current = connectEqualizer(element);
       } catch (error) {
@@ -123,7 +129,9 @@ export default function usePlayback(
     }
     eqGraph.current?.configure(equalizer);
     if (!exclusive && (playing || equalizer.enabled))
-      void eqGraph.current?.context.resume().catch(() => {});
+      void eqGraph.current?.context.resume().catch((error) =>
+        playbackLog("audio-context-resume-failed", activeTrack.current, { error }),
+      );
   }, [equalizer, exclusive, playing, notify, setEqualizer]);
   useEffect(() => {
     const element = audio.current;
@@ -765,7 +773,17 @@ export default function usePlayback(
     },
     onPlaying: () => {
       if (eqGraph.current?.context.state === "suspended")
-        void eqGraph.current.context.resume().catch(() => {});
+        void eqGraph.current.context.resume().catch((error) =>
+          playbackLog("audio-context-resume-failed", activeTrack.current, { error }),
+        );
+      playbackLog("audio-playing", activeTrack.current, {
+        route: eqGraph.current ? "web-audio" : "media-element",
+        context: eqGraph.current?.context.state,
+        volume: audio.current?.volume,
+        muted: audio.current?.muted,
+        readyState: audio.current?.readyState,
+        platform: navigator.platform,
+      });
       clearTimeout(stallTimer.current);
       if (!exclusive) {
         setPreparing(false);
@@ -813,6 +831,12 @@ export default function usePlayback(
       }
     },
     onError: () => {
+      playbackLog("audio-element-error", activeTrack.current, {
+        code: audio.current?.error?.code,
+        error: audio.current?.error?.message,
+        readyState: audio.current?.readyState,
+        networkState: audio.current?.networkState,
+      });
       if (remotePlayback.current && navigator.onLine === false) {
         networkWaiting.current = true;
         clearTimeout(stallTimer.current);
