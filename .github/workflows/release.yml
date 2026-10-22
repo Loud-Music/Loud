@@ -62,7 +62,8 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: rust-cache
         with:
           path: |
             ~/.cargo/registry
@@ -79,6 +80,14 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      - uses: actions/cache/save@v4
+        if: ${{ always() && steps.rust-cache.outputs.cache-hit != 'true' }}
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: linux-release-${{ hashFiles('src-tauri/Cargo.lock') }}
       - name: Verify first launch and media tools
         run: |
           export LOUD_PROFILE_DIR="$(mktemp -d)"
@@ -98,7 +107,7 @@ jobs:
             "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffmpeg" -version
             "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffprobe" -version
             "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/yt-dlp" --version
-            "$LOUD_PROFILE_DIR/tools/music-module/env/bin/python3" -c "import spotiflac, json5, playwright.sync_api"
+            "$LOUD_PROFILE_DIR/tools/music-module/env/bin/python3" -c "from importlib.metadata import version; assert version(\"spotiflac\") == \"5.0.5\"; import SpotiFLAC, json5, playwright.sync_api"
           '
           src-tauri/target/release/bundle/appimage/*.AppImage --appimage-extract >/dev/null
           test -x squashfs-root/AppRun
