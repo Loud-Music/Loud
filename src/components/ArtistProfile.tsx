@@ -22,6 +22,7 @@ import {
 } from "../lib/artists";
 import { recordingKey, time, type Track } from "../lib/library";
 import ArtistCard from "./ArtistCard";
+import { appleArtistImage } from "../lib/appleCatalog";
 
 export default function ArtistProfile({
   name,
@@ -88,6 +89,24 @@ export default function ArtistProfile({
       live = false;
     };
   }, [name, revision]);
+  useEffect(() => {
+    const artist = profile?.artist;
+    if (artist?.catalog !== "apple") return;
+    let live = true;
+    void appleArtistImage(artist.id)
+      .then((image) => {
+        if (live && image)
+          setProfile((current) =>
+            current?.artist.id === artist.id
+              ? { ...current, artist: { ...current.artist, picture_xl: image } }
+              : current,
+          );
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [profile?.artist.id, profile?.artist.catalog]);
   useEffect(() => {
     let live = true;
     setAlbumSongs([]);

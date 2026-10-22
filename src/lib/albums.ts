@@ -23,6 +23,19 @@ export function parseAlbumRoute(value: string): AlbumSeed {
   return { id: `local:${value}`, title: value, artistName: "" };
 }
 export async function loadAlbum(seed: AlbumSeed, saved: Track[]) {
+  if (String(seed.id).startsWith("apple:")) {
+    const tracks = await releaseTracks(seed);
+    if (!tracks.length)
+      throw new Error("Не удалось загрузить треклист альбома");
+    return {
+      ...seed,
+      artistNames: [
+        ...new Set(tracks.flatMap((track) => track.artists || [track.artist])),
+      ],
+      tracks,
+      local: false,
+    };
+  }
   let id = String(seed.id);
   if (!/^\d+$/.test(id)) {
     const response = await catalogJSON<{

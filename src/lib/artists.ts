@@ -1,12 +1,13 @@
 import { catalogJSON } from "./catalogRequest";
 import { trackArtists, type Track } from "./library";
-import { appleAlbum, appleSearch, appleTracks } from "./appleCatalog";
+import { appleAlbum, appleArtistCatalog } from "./appleCatalog";
 
 export interface Artist {
   id: number;
   name: string;
   picture_xl?: string;
   picture_big?: string;
+  catalog?: "apple";
 }
 export interface ArtistRelease {
   id: number | string;
@@ -187,14 +188,12 @@ async function deezerProfile(name: string) {
 }
 
 async function appleProfile(name: string) {
-  const items = (await appleSearch(name)).filter(
-    (item) => artistKey(item.artistName) === artistKey(name),
-  );
-  if (!items.length) return;
-  const songs = appleTracks(items);
+  const catalog = await appleArtistCatalog(name);
+  if (!catalog) return;
+  const { songs } = catalog;
   const releases: ArtistRelease[] = [
     ...new Map(
-      items
+      catalog.albums
         .filter((item) => item.collectionId)
         .map((item) => [
           item.collectionId,
@@ -203,17 +202,23 @@ async function appleProfile(name: string) {
             title: item.collectionName || item.trackName || "",
             cover_big: item.artworkUrl100?.replace(/100x100bb/, "600x600bb"),
             release_date: item.releaseDate,
+            record_type: /\bEP$/i.test(item.collectionName || "")
+              ? "ep"
+              : /\bSingle$/i.test(item.collectionName || "") ||
+                  item.trackCount === 1
+                ? "single"
+                : "album",
           },
         ]),
     ).values(),
   ];
   return {
-    artist: { id: items[0].artistId, name: items[0].artistName } as Artist,
+    artist: { id: catalog.id, name, catalog: "apple" } as Artist,
     songs,
     releases,
     more: false,
     related: [] as Artist[],
-    partial: false,
+    partial: catalog.partial,
   };
 }
 

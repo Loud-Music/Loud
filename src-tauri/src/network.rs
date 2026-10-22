@@ -251,6 +251,70 @@ pub async fn catalog_json(
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[tauri::command]
+pub async fn apple_artist_image(id: u64) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = Client::builder()
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() < 3
+                    && attempt.url().scheme() == "https"
+                    && attempt.url().host_str() == Some("music.apple.com")
+                {
+                    attempt.follow()
+                } else {
+                    attempt.error("Unsupported artist redirect")
+                }
+            }))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let response = client
+            .get(format!("https://music.apple.com/us/artist/{id}"))
+            .send()
+            .and_then(|r| r.error_for_status())
+            .map_err(|e| e.to_string())?;
+        let mut html = String::new();
+        response
+            .take(4 * 1024 * 1024)
+            .read_to_string(&mut html)
+            .map_err(|e| e.to_string())?;
+        for tag in html
+            .split("<meta")
+            .skip(1)
+            .filter_map(|tag| tag.split('>').next())
+        {
+            if !tag.contains("property=\"og:image\"") {
+                continue;
+            }
+            let Some(image) = tag
+                .split("content=\"")
+                .nth(1)
+                .and_then(|value| value.split('"').next())
+            else {
+                continue;
+            };
+            let image = image.replace("&amp;", "&");
+            let Ok(url) = reqwest::Url::parse(&image) else {
+                continue;
+            };
+            if url.scheme() == "https"
+                && url.port_or_known_default() == Some(443)
+                && url.username().is_empty()
+                && url.password().is_none()
+                && url
+                    .host_str()
+                    .is_some_and(|host| host.ends_with(".mzstatic.com"))
+            {
+                return Ok(Some(image));
+            }
+        }
+        Ok(None)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
 #[tauri::command]
 pub async fn cache_catalog_audio(
     app: tauri::AppHandle,

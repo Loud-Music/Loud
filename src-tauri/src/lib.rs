@@ -85,6 +85,7 @@ pub fn run() {
             network::show_music_folder,
             network::archive_json,
             network::catalog_json,
+            network::apple_artist_image,
             network::apple_recordings,
             network::cache_catalog_audio,
             network::cache_local_flac,
