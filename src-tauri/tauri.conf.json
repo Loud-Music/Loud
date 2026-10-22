@@ -1,0 +1,73 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Loud",
+  "version": "0.2.0",
+  "identifier": "com.loud.platform",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Loud Platform",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 820,
+        "minHeight": 640,
+        "decorations": false,
+        "dragDropEnabled": false,
+        "backgroundColor": "#00000000",
+        "transparent": true,
+        "shadow": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' https://js-cdn.music.apple.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https:; media-src 'self' http://127.0.0.1:* blob: asset: http://asset.localhost https:; connect-src 'self' http://127.0.0.1:* blob: asset: http://asset.localhost ipc: http://ipc.localhost https://*.sndcdn.com https://*.soundcloud.cloud https://lucida.to https://*.lucida.to https://*.apple.com https://*.mzstatic.com https://archive.org https://*.archive.org https://api.audius.co https://commons.wikimedia.org https://upload.wikimedia.org; frame-src https://*.apple.com;",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPCACHE/audio/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "publisher": "Loud",
+    "copyright": "Copyright (c) 2026 Loud. All rights reserved.",
+    "licenseFile": "../LICENSE.txt",
+    "resources": {
+      "../licenses/": "licenses/",
+      "../LICENSE.txt": "LICENSE.txt"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
+      },
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Russian"],
+        "displayLanguageSelector": true,
+        "compression": "lzma",
+        "startMenuFolder": "Loud"
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/Loud-Music/app/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      },
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFBQzEwNTgwN0U5OTM2QzMKUldURE5wbCtnQVhCcXZQVFZ3QS82ZG9qYW1xeWtLYWxDM2hmT3pmQmtxem5tZzRLM3NRYjlJWE8K"
+    }
+  }
+}

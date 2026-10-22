@@ -1,0 +1,25 @@
+node_modules/
+dist/
+src-tauri/target/
+.env
+.env.local
+.env.*
+!.env.example
+.tools/
+.release/
+.publish/
+.codex/
+.agents/
+__pycache__/
+*.pyc
+*.key
+*.key.pub
+ghost 1.svg
+test-results/
+playwright-report/
+*.log
+*.tsbuildinfo
+verification/
+screenshots/
+releases/
+src-tauri/gen/

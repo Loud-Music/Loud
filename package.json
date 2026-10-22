@@ -1,0 +1,35 @@
+{
+  "name": "loud-platform",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "tauri",
+    "format": "prettier --write src scripts *.json *.ts index.html"
+  },
+  "dependencies": {
+    "@fontsource-variable/google-sans-flex": "^5.3.2",
+    "@tauri-apps/api": "~2.12.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.0",
+    "hls.js": "^1.7.3",
+    "lucide-react": "^0.468.0",
+    "music-metadata": "^11.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.4",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "~5.9.2",
+    "vite": "^7.1.0"
+  },
+  "license": "GPL-3.0-only"
+}

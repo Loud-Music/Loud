@@ -1,0 +1,4 @@
+FFmpeg binary distribution: https://github.com/spotbye/Dependencies/releases/tag/FFmpeg-8.1
+FFmpeg source and licensing: https://ffmpeg.org/legal.html
+Original sources: https://ffmpeg.org/download.html
+Loud downloads the tools separately into its application data directory.

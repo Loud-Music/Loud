@@ -1,0 +1,451 @@
+.app-shell {
+  height: 100dvh;
+  display: grid;
+  overflow: hidden;
+  background: var(--bg);
+  grid-template-columns: 192px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) 88px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  position: relative;
+}
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  z-index: 35;
+  grid-column: 1;
+  grid-row: 1;
+  padding: 0 12px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+.sidebar-top {
+  display: flex;
+  align-items: center;
+  padding-left: 4px;
+  height: 38px;
+  min-height: 38px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  margin: 12px 0 27px;
+  gap: 9px;
+  padding: 0 9px;
+}
+.brand > span:last-child {
+  font-size: 25px;
+  font-weight: 650;
+  letter-spacing: -1px;
+}
+.sidebar nav {
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 10px;
+}
+.main-shell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  grid-column: 2;
+  overflow: hidden;
+  grid-row: 1;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 28px;
+}
+.content {
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  animation: content-arrive 340ms var(--motion-ease) both;
+  padding: 18px 32px 32px;
+}
+.player {
+  display: grid;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  z-index: 30;
+  position: relative;
+  left: auto;
+  right: auto;
+  top: auto;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  height: 80px;
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 1fr) minmax(
+      180px,
+      1fr
+    );
+  grid-template-areas: "track controls extra";
+  gap: 20px;
+  padding: 0 20px;
+  margin: 0 8px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--player);
+  backdrop-filter: blur(30px) saturate(125%);
+  overflow: hidden;
+  isolation: isolate;
+}
+.player::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--player-art, none) center / cover;
+  opacity: 0.13;
+  filter: blur(40px);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: -1;
+}
+.now-playing {
+  grid-area: track;
+  display: flex;
+  align-items: center;
+  position: relative;
+  width: 100%;
+  border-radius: 4px;
+  min-width: 0;
+  background: none;
+  border: 0;
+  height: 54px;
+  max-width: 100%;
+  justify-self: start;
+  overflow: hidden;
+  gap: 12px;
+}
+.now-cover {
+  flex-shrink: 0;
+  padding: 0;
+  height: 48px;
+  width: 48px;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.now-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.now-info {
+  min-width: 0;
+  flex: 1;
+  animation: row-arrive 280ms var(--motion-ease) both;
+  text-align: left;
+  padding: 0;
+}
+.now-info strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  line-height: 1.5;
+  font-size: 13px;
+}
+.now-info > span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--subtle);
+  line-height: 1.5;
+  font-size: 11px;
+}
+.now-playing > .favorite-button {
+  margin-right: 6px;
+  color: var(--muted);
+  margin: 0 0 0 4px;
+}
+.now-playing > .favorite-button.is-active {
+  color: var(--accent);
+}
+.now-playing > .favorite-button svg {
+  width: 16px;
+}
+.transport {
+  grid-area: controls;
+  display: flex;
+  justify-content: center;
+  padding-bottom: 10px;
+}
+.transport-buttons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+.transport-buttons .icon-button {
+  width: 31px;
+  height: 32px;
+}
+.transport-buttons .icon-button > svg {
+  width: 20px;
+}
+.transport-buttons .icon-button:first-child svg,
+.transport-buttons .icon-button:last-child svg {
+  width: 15px;
+}
+.transport-buttons .icon-button:nth-child(2) svg,
+.transport-buttons .icon-button:nth-child(4) svg {
+  fill: currentColor;
+  stroke-width: 0.8;
+}
+.main-play {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--bg);
+}
+.main-play:hover {
+  color: var(--bg);
+  background: var(--subtle);
+}
+.main-play > svg {
+  width: 18px;
+  height: 18px;
+}
+.main-play > .lucide-play {
+  margin-left: 2px;
+}
+.seek-bar {
+  display: flex;
+  align-items: center;
+  position: absolute;
+  bottom: 10px;
+  left: 34%;
+  right: 34%;
+  height: 12px;
+  gap: 8px;
+}
+.seek-bar > span {
+  display: inline;
+  color: var(--muted);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+.seek-bar > input {
+  height: 3px;
+  align-self: center;
+  border-radius: 3px;
+}
+.player-right {
+  grid-area: extra;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+}
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.volume-control .icon-button {
+  width: 25px;
+}
+.volume-control > input {
+  width: 76px;
+}
+.volume-control svg {
+  width: 17px;
+}
+.player-divider {
+  height: 18px;
+  width: 1px;
+  background: var(--line);
+}
+.player-right > .icon-button {
+  width: 26px;
+}
+.player-right > .icon-button svg {
+  width: 19px;
+}
+.volume-control input:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.content-wave {
+  padding-top: 0;
+}
+.queue-panel {
+  top: 48px;
+  bottom: 88px;
+}
+.lyrics-panel {
+  top: 48px;
+  bottom: 88px;
+}
+.sidebar .search-field {
+  margin-bottom: 22px;
+}
+.sidebar .search-field kbd {
+  display: none;
+}
+.sidebar .nav-item {
+  min-height: 36px;
+  font-size: 12px;
+  border-radius: 7px;
+}
+.sidebar .nav-item > svg {
+  color: var(--muted);
+}
+.sidebar .nav-item.selected {
+  background: var(--selection);
+}
+.sidebar .nav-item.selected > svg {
+  color: var(--text);
+}
+.sidebar .nav-heading {
+  margin-top: 22px;
+  font-size: 10px;
+}
+.sidebar .playlist-nav {
+  overflow-y: auto;
+  min-height: 0;
+}
+.sidebar nav {
+  overflow-y: auto;
+  min-height: 0;
+}
+.sidebar .sidebar-bottom {
+  padding-top: 12px;
+}
+.sidebar .profile {
+  padding: 12px 4px;
+  gap: 9px;
+}
+.sidebar .profile small {
+  font-size: 10px;
+}
+.sidebar .profile > svg {
+  display: none;
+}
+@media (max-width: 1100px) {
+  .player {
+    grid-template-columns: minmax(170px, 1fr) 240px minmax(140px, 1fr);
+    gap: 10px;
+    padding-inline: 12px;
+  }
+  .output-indicator {
+    display: none;
+  }
+  .volume-control > input {
+    width: 60px;
+  }
+}
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 170px minmax(0, 1fr);
+  }
+  .sidebar {
+    padding-inline: 9px;
+  }
+  .content {
+    padding-inline: 22px;
+  }
+  .toolbar {
+    padding-inline: 18px;
+  }
+  .player {
+    grid-template-columns: minmax(140px, 1fr) 220px 130px;
+    gap: 8px;
+  }
+  .volume-control > input {
+    width: 42px;
+  }
+  .transport-buttons {
+    gap: 8px;
+  }
+  .player-divider {
+    display: none;
+  }
+}
+@media (max-width: 650px) {
+  .app-shell {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+  .sidebar .brand > span:last-child,
+  .sidebar .search-field,
+  .sidebar .nav-item > span,
+  .sidebar .nav-heading,
+  .sidebar .profile > span:last-of-type,
+  .sidebar .playlist-nav {
+    display: none;
+  }
+  .sidebar .brand {
+    padding: 0;
+    margin: 16px auto 26px;
+  }
+  .sidebar .nav-item {
+    justify-content: center;
+  }
+  .sidebar .nav-item > svg {
+    display: block;
+  }
+  .sidebar .nav-item {
+    font-size: 0;
+  }
+  .sidebar .sidebar-top {
+    padding-left: 0;
+  }
+  .traffic-lights {
+    gap: 5px;
+  }
+  .traffic {
+    width: 9px;
+    height: 9px;
+  }
+  .content {
+    padding-inline: 18px;
+  }
+  .player {
+    grid-template-columns: minmax(100px, 1fr) 180px 32px;
+    padding-inline: 10px;
+  }
+  .player-right {
+    gap: 0;
+  }
+  .player-right .volume-control,
+  .player-right .player-divider,
+  .player-right > .icon-button:last-child,
+  .now-playing > .favorite-button {
+    display: none;
+  }
+  .transport-buttons {
+    gap: 2px;
+  }
+  .now-playing {
+    gap: 8px;
+  }
+  .now-cover {
+    width: 38px;
+    height: 38px;
+  }
+  .now-info strong {
+    font-size: 11px;
+  }
+  .seek-bar {
+    left: 20px;
+    right: 20px;
+    bottom: 2px;
+  }
+  .transport {
+    padding-bottom: 0;
+  }
+}
