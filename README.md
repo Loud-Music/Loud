@@ -1,6 +1,6 @@
 # Loud
 
-A desktop music player for Windows, built with React and Tauri.
+A desktop music player for Windows and Linux, built with React and Tauri.
 
 Gapless playback, a 10-band equalizer, synced lyrics, local profiles and Discord Rich Presence.
 
@@ -8,7 +8,7 @@ Gapless playback, a 10-band equalizer, synced lyrics, local profiles and Discord
 
 ## Development
 
-Requires Node.js 22+, Rust 1.90+, MSVC Build Tools and WebView2.
+Requires Node.js 22+ and Rust 1.90+. Windows builds need MSVC Build Tools and WebView2; Linux builds need WebKitGTK 4.1 and GTK 3 development packages.
 
 ```sh
 npm ci

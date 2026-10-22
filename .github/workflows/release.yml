@@ -62,6 +62,13 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: linux-release-${{ hashFiles('src-tauri/Cargo.lock') }}
       - name: Install system libraries
         run: |
           sudo apt-get update
@@ -95,6 +102,9 @@ jobs:
           '
           src-tauri/target/release/bundle/appimage/*.AppImage --appimage-extract >/dev/null
           test -x squashfs-root/AppRun
+          status=0
+          xvfb-run -a timeout 15s squashfs-root/AppRun > "$LOUD_PROFILE_DIR/appimage.log" 2>&1 || status=$?
+          if [ "$status" -ne 124 ]; then cat "$LOUD_PROFILE_DIR/appimage.log"; exit 1; fi
           dpkg-deb --info src-tauri/target/release/bundle/deb/*.deb
           gst-inspect-1.0 flacdec
           gst-inspect-1.0 avdec_aac
