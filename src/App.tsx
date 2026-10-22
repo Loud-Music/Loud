@@ -7,7 +7,7 @@ import {
   ChevronRight,
   Heart,
   ListMusic,
-  Maximize2,
+  Square,
   Minus,
   Music2,
   Play,
@@ -808,7 +808,6 @@ export default function App({
         account={account}
         onSwitchAccount={onSwitchAccount}
         navigate={navigate}
-        windowAction={windowAction}
         setModal={setModal}
       />
       <div className="main-shell">
@@ -856,7 +855,7 @@ export default function App({
                 onClick={() => void windowAction("minimize")}
               />
               <IconButton
-                icon={Maximize2}
+                icon={Square}
                 label="Развернуть"
                 onClick={() => void windowAction("toggleMaximize")}
               />

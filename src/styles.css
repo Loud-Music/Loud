@@ -66,26 +66,6 @@ p {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
-.traffic-lights {
-  display: flex;
-  gap: 8px;
-}
-.traffic {
-  height: 12px;
-  width: 12px;
-  padding: 0;
-  border-radius: 50%;
-  box-shadow: inset 0 0 0 1px #00000012;
-}
-.traffic.red {
-  background: #ff6058;
-}
-.traffic.yellow {
-  background: #ffbd2e;
-}
-.traffic.green {
-  background: #28c840;
-}
 .brand small {
   display: none;
 }
@@ -100,7 +80,19 @@ p {
   display: none;
 }
 .native-controls {
-  display: none;
+  display: flex;
+  align-items: center;
+  margin-left: 16px;
+  align-self: stretch;
+}
+.native-controls .icon-button {
+  width: 44px;
+  height: 40px;
+  border-radius: 0;
+}
+.native-controls .icon-button:last-child:hover {
+  color: #fff;
+  background: #c42b3a;
 }
 .icon-button {
   display: inline-flex;

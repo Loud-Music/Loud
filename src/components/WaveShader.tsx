@@ -67,7 +67,9 @@ export default function WaveShader({
       alpha: false,
       antialias: false,
       depth: false,
-      powerPreference: "low-power",
+      powerPreference: /Linux/.test(navigator.userAgent)
+        ? "high-performance"
+        : "low-power",
     });
     if (!gl) {
       setFallback(true);
@@ -88,7 +90,13 @@ export default function WaveShader({
       shaders.push(shader);
       gl!.shaderSource(shader, source);
       gl!.compileShader(shader);
-      if (!gl!.getShaderParameter(shader, gl!.COMPILE_STATUS)) return false;
+      if (!gl!.getShaderParameter(shader, gl!.COMPILE_STATUS)) {
+        console.error(
+          "Wave shader compilation failed",
+          gl!.getShaderInfoLog(shader),
+        );
+        return false;
+      }
       gl!.attachShader(program!, shader);
       return true;
     }

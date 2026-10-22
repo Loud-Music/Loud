@@ -16,7 +16,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import type { Playlist } from "../lib/library";
 import type { LocalAccount } from "../lib/accounts";
-import type { View, WindowAction } from "../lib/navigation";
+import type { View } from "../lib/navigation";
 import { viewLabel } from "../lib/navigation";
 import IconButton from "./IconButton";
 type Props = {
@@ -30,7 +30,6 @@ type Props = {
   account: LocalAccount;
   onSwitchAccount: () => void;
   navigate: (view: View) => void;
-  windowAction: (action: WindowAction) => Promise<void>;
   setModal: (modal: "playlist" | "settings") => void;
 };
 export default function Sidebar({
@@ -44,7 +43,6 @@ export default function Sidebar({
   account,
   onSwitchAccount,
   navigate,
-  windowAction,
   setModal,
 }: Props) {
   const navItem = (name: View, Icon: LucideIcon, badge?: number) => (
@@ -62,25 +60,6 @@ export default function Sidebar({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-top" data-tauri-drag-region>
-        <div className="traffic-lights">
-          <button
-            aria-label="Закрыть окно"
-            onClick={() => void windowAction("close")}
-            className="traffic red"
-          />
-          <button
-            aria-label="Свернуть окно"
-            onClick={() => void windowAction("minimize")}
-            className="traffic yellow"
-          />
-          <button
-            aria-label="Развернуть окно"
-            onClick={() => void windowAction("toggleMaximize")}
-            className="traffic green"
-          />
-        </div>
-      </div>
       <button
         className="brand"
         onClick={() => navigate("Listen Now")}

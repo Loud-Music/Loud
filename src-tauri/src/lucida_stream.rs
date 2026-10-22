@@ -300,7 +300,15 @@ pub fn prepare(url: &str, expected_duration: f64) -> Result<Value, String> {
 pub fn download(url: &str) -> Result<Response, String> {
     let client = client()?;
     let started = Instant::now();
-    for attempt in 0..48 {
+    let failure = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
+    for attempt in 0..96 {
+        if let Some(error) = failure
+            .lock()
+            .map_err(|_| "Lucida status unavailable")?
+            .take()
+        {
+            return Err(error);
+        }
         let mut response = client.get(url).send().map_err(|e| e.to_string())?;
         if response.status().is_success() {
             return Ok(response);
@@ -312,26 +320,35 @@ pub fn download(url: &str) -> Result<Response, String> {
         }
         let _ = std::io::copy(&mut response.by_ref().take(65536), &mut std::io::sink());
         if attempt == 2 {
-            let status = client
-                .get(url.trim_end_matches("/download"))
-                .timeout(Duration::from_secs(2))
-                .send();
-            if let Ok(response) = status {
-                if let Ok(text) = body(response) {
-                    if let Ok(data) = serde_json::from_str::<Value>(&text) {
-                        if matches!(data["status"].as_str(), Some("error" | "failed")) {
-                            return Err(data["message"]
-                                .as_str()
-                                .unwrap_or("Lucida processing failed")
-                                .chars()
-                                .take(500)
-                                .collect());
+            let client = client.clone();
+            let status_url = url.trim_end_matches("/download").to_owned();
+            let failure = failure.clone();
+            std::thread::spawn(move || {
+                let status = client
+                    .get(status_url)
+                    .timeout(Duration::from_secs(2))
+                    .send();
+                if let Ok(response) = status {
+                    if let Ok(text) = body(response) {
+                        if let Ok(data) = serde_json::from_str::<Value>(&text) {
+                            if matches!(data["status"].as_str(), Some("error" | "failed")) {
+                                if let Ok(mut failure) = failure.lock() {
+                                    *failure = Some(
+                                        data["message"]
+                                            .as_str()
+                                            .unwrap_or("Lucida processing failed")
+                                            .chars()
+                                            .take(500)
+                                            .collect(),
+                                    );
+                                }
+                            }
                         }
                     }
                 }
-            }
+            });
         }
-        std::thread::sleep(Duration::from_millis(250));
+        std::thread::sleep(Duration::from_millis(if attempt < 8 { 100 } else { 250 }));
     }
     Err("Lucida audio preparation timed out".into())
 }

@@ -178,18 +178,11 @@
   min-height: 0;
   z-index: 35;
   grid-column: 1;
-  grid-row: 1;
-  padding: 0 12px;
+  grid-row: 1 / -1;
+  padding: 20px 12px 12px;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
   overflow: hidden;
-}
-.sidebar-top {
-  display: flex;
-  align-items: center;
-  padding-left: 4px;
-  height: 38px;
-  min-height: 38px;
 }
 .brand {
   display: flex;
@@ -232,7 +225,7 @@
   margin-top: 0;
   height: 48px;
   min-height: 48px;
-  padding: 0 28px;
+  padding: 0 0 0 28px;
 }
 .content {
   overflow-y: auto;
@@ -249,7 +242,7 @@
   left: auto;
   right: auto;
   top: auto;
-  grid-column: 1 / -1;
+  grid-column: 2;
   grid-row: 2;
   height: 80px;
   grid-template-columns: minmax(180px, 1fr) minmax(240px, 1fr) minmax(
@@ -309,7 +302,7 @@
 }
 .now-info {
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
   text-align: left;
   padding: 0;
 }
@@ -332,9 +325,12 @@
   font-size: 11px;
 }
 .now-playing > .favorite-button {
-  margin-right: 6px;
+  flex: 0 0 36px;
+  width: 36px;
+  height: 36px;
+  margin: 0;
+  padding: 8px;
   color: var(--muted);
-  margin: 0 0 0 4px;
 }
 .now-playing > .favorite-button.is-active {
   color: var(--accent);
@@ -554,16 +550,6 @@ html[data-platform="desktop"] .toolbar {
   }
   .sidebar .nav-item {
     font-size: 0;
-  }
-  .sidebar .sidebar-top {
-    padding-left: 0;
-  }
-  .traffic-lights {
-    gap: 5px;
-  }
-  .traffic {
-    width: 9px;
-    height: 9px;
   }
   .content {
     padding-inline: 18px;

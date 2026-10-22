@@ -2,8 +2,7 @@
   position: relative;
   isolation: isolate;
   width: 100%;
-  max-width: 1180px;
-  margin: 0 auto;
+  margin: 0;
 }
 .wave-hero {
   position: relative;
@@ -119,7 +118,8 @@
 }
 .wave-controls {
   display: flex;
-  gap: 3px;
+  align-items: center;
+  gap: 8px;
 }
 .wave-preferences {
   padding: 24px;
@@ -175,7 +175,7 @@
 }
 .wave-upcoming {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 24px 18px;
 }
 .wave-upcoming > button {
@@ -284,4 +284,11 @@
   .wave-upcoming img {
     transition: none;
   }
+}
+
+.wave-controls .icon-button {
+  width: 40px;
+  height: 40px;
+  padding: 10px;
+  flex-shrink: 0;
 }

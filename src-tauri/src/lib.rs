@@ -64,6 +64,18 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                window.with_webview(|webview| {
+                    use webkit2gtk::{SettingsExt, WebViewExt};
+                    if let Some(settings) = webview.inner().settings() {
+                        settings.set_enable_webgl(true);
+                        settings.set_hardware_acceleration_policy(
+                            webkit2gtk::HardwareAccelerationPolicy::Always,
+                        );
+                    }
+                })?;
+            }
             let root = network::cache_root(app.handle()).map_err(std::io::Error::other)?;
             app.asset_protocol_scope().allow_directory(&root, true)?;
             let data = storage::data_root(app.handle())?.join("user-data");
