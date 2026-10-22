@@ -1,12 +1,15 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { createHash } from "node:crypto";
 
 const { version } = JSON.parse(readFileSync("package.json", "utf8"));
 const folder = resolve("src-tauri/target/release/bundle/nsis");
-const installer = readdirSync(folder).find(
-  (name) => name.endsWith(".exe") && name.includes(version),
+const installers = readdirSync(folder).filter(
+  (name) => name.endsWith("_x64-setup.exe") && name.includes(`_${version}_`),
 );
-if (!installer) throw new Error("Installer is missing");
+if (installers.length !== 1)
+  throw new Error("Expected one Windows x64 installer");
+const [installer] = installers;
 const signature = readFileSync(
   resolve(folder, `${installer}.sig`),
   "utf8",
@@ -17,7 +20,8 @@ writeFileSync(
   JSON.stringify(
     {
       version,
-      notes: "Gapless playback and signed updates.",
+      notes:
+        "Персональная волна, полные треки, синхронизированный текст и подписанные обновления.",
       pub_date: new Date().toISOString(),
       platforms: {
         "windows-x86_64": {
@@ -29,4 +33,15 @@ writeFileSync(
     null,
     2,
   ) + "\n",
+);
+writeFileSync(
+  resolve(folder, "SHA256SUMS.txt"),
+  [installer, `${installer}.sig`, "latest.json"]
+    .map(
+      (name) =>
+        `${createHash("sha256")
+          .update(readFileSync(resolve(folder, name)))
+          .digest("hex")}  ${name}\n`,
+    )
+    .join(""),
 );

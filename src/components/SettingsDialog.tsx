@@ -1,3 +1,4 @@
+import { version } from "../../package.json";
 import Equalizer from "./Equalizer";
 import UpdateSettings from "./UpdateSettings";
 import type { EqualizerSettings } from "../lib/equalizer";
@@ -510,7 +511,7 @@ export default function SettingsDialog({
                   <img src="/mascot.svg" alt="Loud" width={64} height={52} />
                 </span>
                 <h1>Loud</h1>
-                <p>Версия 0.2.0</p>
+                <p>Версия {version}</p>
                 <UpdateSettings />
                 <div className="prefs-about-line" />
                 <small>Ваша медиатека и настройки сохраняются локально.</small>

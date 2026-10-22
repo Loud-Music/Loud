@@ -1,3 +1,4 @@
+import { version } from "../../package.json";
 import type { RefObject, Dispatch, SetStateAction } from "react";
 import {
   AudioLines,
@@ -163,7 +164,7 @@ export default function Sidebar({
           </span>
           <span>
             <strong>Настройки</strong>
-            <small>Loud 0.2.0</small>
+            <small>Loud {version}</small>
           </span>
           <Settings2 size={17} />
         </button>
