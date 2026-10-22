@@ -86,10 +86,13 @@ export async function appleArtistCatalog(name: string) {
   const search = await appleSearch(name);
   const match =
     search.find((item) => key(item.artistName) === key(name)) ||
-    search.find((item) =>
-      trackArtists({ artist: item.artistName.replace(/\s+&\s+/g, ", ") }).some(
-        (artist) => key(artist) === key(name),
-      ),
+    search.find(
+      (item) =>
+        key(
+          trackArtists({
+            artist: item.artistName.replace(/\s+&\s+/g, ", "),
+          })[0] || "",
+        ) === key(name),
     );
   if (!match) return;
   const lookup = async (entity: string) => {
