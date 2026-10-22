@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import type { Dispatch, SetStateAction } from "react";
 import {
   Heart,
@@ -123,7 +124,7 @@ export default function Player({
             label="Предыдущий трек"
             onClick={() => advance(-1)}
           />
-          <button
+          <Button
             className="main-play"
             aria-label={playing ? "Пауза" : "Слушать"}
             disabled={!current.src}
@@ -136,7 +137,7 @@ export default function Player({
             ) : (
               <Play size={20} fill="currentColor" />
             )}
-          </button>
+          </Button>
           <IconButton
             icon={SkipForward}
             label="Следующий трек"

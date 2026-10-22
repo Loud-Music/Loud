@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import type { LucideIcon } from "lucide-react";
 export default function IconButton({
   icon: Icon,
@@ -15,7 +16,7 @@ export default function IconButton({
   disabled?: boolean;
 }) {
   return (
-    <button
+    <Button
       className={`icon-button ${active ? "is-active" : ""} ${className}`}
       title={label}
       aria-label={label}
@@ -24,6 +25,6 @@ export default function IconButton({
       disabled={disabled}
     >
       <Icon size={19} strokeWidth={1.7} />
-    </button>
+    </Button>
   );
 }
