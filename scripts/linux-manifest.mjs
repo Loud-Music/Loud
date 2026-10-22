@@ -14,7 +14,7 @@ const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 if (manifest.version !== version) throw new Error("Release version mismatch");
 manifest.platforms["linux-x86_64"] = {
   signature,
-  url: `https://github.com/Loud-Music/app/releases/download/v${version}/${encodeURIComponent(image)}`,
+  url: `https://github.com/Loud-Music/Loud/releases/download/v${version}/${encodeURIComponent(image)}`,
 };
 writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
 const files = [

@@ -4,7 +4,7 @@ A desktop music player for Windows and Linux, built with React and Tauri.
 
 Gapless playback, a 10-band equalizer, synced lyrics, local profiles and Discord Rich Presence.
 
-[Download](https://github.com/Loud-Music/app/releases/latest)
+[Download](https://github.com/Loud-Music/Loud/releases/latest)
 
 ## Development
 

@@ -62,7 +62,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/Loud-Music/app/releases/latest/download/latest.json"
+        "https://github.com/Loud-Music/Loud/releases/latest/download/latest.json"
       ],
       "windows": {
         "installMode": "passive"

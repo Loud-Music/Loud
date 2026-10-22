@@ -26,7 +26,7 @@ writeFileSync(
       platforms: {
         "windows-x86_64": {
           signature,
-          url: `https://github.com/Loud-Music/app/releases/download/v${version}/${encodeURIComponent(installer)}`,
+          url: `https://github.com/Loud-Music/Loud/releases/download/v${version}/${encodeURIComponent(installer)}`,
         },
       },
     },
