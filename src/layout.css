@@ -36,10 +36,16 @@
   gap: 9px;
   padding: 0 9px;
 }
-.brand > span:last-child {
-  font-size: 25px;
-  font-weight: 650;
-  letter-spacing: -1px;
+.brand-wordmark {
+  display: block;
+  width: 136px;
+  height: auto;
+}
+[data-theme="light"] .brand-wordmark,
+[data-theme="light"] .account-brand img,
+[data-theme="light"] .prefs-brand img,
+[data-theme="light"] .prefs-about-logo {
+  filter: brightness(0.12);
 }
 .sidebar nav {
   min-height: 0;
@@ -391,6 +397,9 @@
   .sidebar .brand {
     padding: 0;
     margin: 16px auto 26px;
+  }
+  .sidebar .brand-wordmark {
+    width: 44px;
   }
   .sidebar .nav-item {
     justify-content: center;

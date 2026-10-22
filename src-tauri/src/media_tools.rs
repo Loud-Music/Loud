@@ -18,6 +18,21 @@ pub struct ToolStatus {
 
 pub fn run(path: &Path) -> Command {
     let mut command = Command::new(path);
+    #[cfg(target_os = "linux")]
+    if let Some(app_dir) = std::env::var_os("APPDIR") {
+        let app_dir = PathBuf::from(app_dir);
+        if let Some(paths) = std::env::var_os("LD_LIBRARY_PATH") {
+            let paths: Vec<_> = std::env::split_paths(&paths)
+                .filter(|path| !path.starts_with(&app_dir))
+                .collect();
+            if paths.is_empty() {
+                command.env_remove("LD_LIBRARY_PATH");
+            } else if let Ok(paths) = std::env::join_paths(paths) {
+                command.env("LD_LIBRARY_PATH", paths);
+            }
+        }
+        command.env_remove("PYTHONHOME").env_remove("PYTHONPATH");
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -105,6 +120,7 @@ pub fn ytdlp(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         make_executable(&temp)?;
         fs::rename(temp, &path).map_err(|e| e.to_string())?;
     }
+    make_executable(&path)?;
     Ok(path)
 }
 fn download_tool(folder: &Path, name: &str, checksum: &str) -> Result<(), String> {
@@ -177,7 +193,13 @@ fn download_tool(folder: &Path, name: &str, checksum: &str) -> Result<(), String
                 || !String::from_utf8_lossy(&output.stdout).starts_with(name)
             {
                 let _ = fs::remove_file(&temp);
-                return Err("Downloaded media tool failed validation".into());
+                return Err(format!(
+                    "{name} failed to start: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                        .chars()
+                        .take(800)
+                        .collect::<String>()
+                ));
             }
             fs::rename(&temp, &target).map_err(|e| e.to_string())?;
             return Ok(());
@@ -220,6 +242,9 @@ pub fn ensure(app: &tauri::AppHandle) -> Result<ToolStatus, String> {
     };
     for (name, checksum) in tools {
         let path = folder.join(executable(name));
+        if path.is_file() {
+            make_executable(&path)?;
+        }
         let valid = path.is_file()
             && run(&path).arg("-version").output().is_ok_and(|o| {
                 o.status.success() && String::from_utf8_lossy(&o.stdout).starts_with(name)
@@ -235,15 +260,36 @@ pub fn ensure(app: &tauri::AppHandle) -> Result<ToolStatus, String> {
 }
 #[tauri::command]
 pub async fn ensure_media_tools(app: tauri::AppHandle) -> Result<ToolStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || ensure(&app))
+    let report_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || ensure(&app))
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+    report_setup(&report_app, "FFmpeg", result)
+}
+
+fn report_setup(
+    app: &tauri::AppHandle,
+    component: &str,
+    result: Result<ToolStatus, String>,
+) -> Result<ToolStatus, String> {
+    let _ = crate::extractor::playback_log(
+        app.clone(),
+        serde_json::json!({
+            "stage": "playback-setup",
+            "component": component,
+            "platform": std::env::consts::OS,
+            "ready": result.is_ok(),
+            "error": result.as_ref().err(),
+        }),
+    );
+    result.map_err(|error| format!("{component}: {error}"))
 }
 
 static MODULE_INSTALL: Mutex<()> = Mutex::new(());
 #[tauri::command]
 pub async fn ensure_music_module(app: tauri::AppHandle) -> Result<ToolStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let report_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         let _guard = MODULE_INSTALL.lock().map_err(|e|e.to_string())?;
         let folder = root(&app)?.parent().unwrap().join("music-module");
         fs::create_dir_all(&folder).map_err(|e|e.to_string())?;
@@ -274,6 +320,7 @@ pub async fn ensure_music_module(app: tauri::AppHandle) -> Result<ToolStatus, St
             }
             if !uv.is_file(){return Err("Python installer missing from package".into());}
         }
+        make_executable(&uv)?;
         let mut setup=run(&uv);
         setup.env("UV_PYTHON_INSTALL_DIR",folder.join("python")).env("UV_CACHE_DIR",folder.join("cache")).args(["venv","--python","3.12.10","--managed-python","--no-progress","--allow-existing"]).arg(folder.join("env"));
         if !python.is_file() {
@@ -282,11 +329,12 @@ pub async fn ensure_music_module(app: tauri::AppHandle) -> Result<ToolStatus, St
         }
         let result=run(&uv).env("UV_CACHE_DIR",folder.join("cache")).args(["pip","install","--no-progress","--python"]).arg(&python).args(["spotiflac==5.0.5", "playwright==1.55.0", "json5==0.12.1"]).output().map_err(|e|e.to_string())?;
         if !result.status.success(){return Err(format!("SpotiFLAC setup failed: {}",String::from_utf8_lossy(&result.stderr).chars().take(800).collect::<String>()));}
-        let result=run(&python).args(["-c","from importlib.metadata import version; assert version('spotiflac') == '5.0.5'; import playwright.sync_api, json5"]).output().map_err(|e|e.to_string())?;
-        if !result.status.success(){return Err("SpotiFLAC installation did not pass verification".into());}
+        let result=run(&python).args(["-c","from importlib.metadata import version; assert version('spotiflac') == '5.0.5'; import SpotiFLAC, playwright.sync_api, json5"]).output().map_err(|e|e.to_string())?;
+        if !result.status.success(){return Err(format!("SpotiFLAC verification failed: {}", String::from_utf8_lossy(&result.stderr).chars().take(800).collect::<String>()));}
         fs::write(marker,b"5.0.5").map_err(|e|e.to_string())?;
         Ok(ToolStatus{ready:true,version:"5.0.5".into()})
-    }).await.map_err(|e|e.to_string())?
+    }).await.map_err(|e|e.to_string())?;
+    report_setup(&report_app, "SpotiFLAC", result)
 }
 
 pub fn module_python(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -299,7 +347,8 @@ pub fn module_python(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 #[tauri::command]
 pub async fn ensure_extractor_tool(app: tauri::AppHandle) -> Result<ToolStatus, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let report_app = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
         ytdlp(&app)?;
         Ok(ToolStatus {
             ready: true,
@@ -307,5 +356,6 @@ pub async fn ensure_extractor_tool(app: tauri::AppHandle) -> Result<ToolStatus, 
         })
     })
     .await
-    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    report_setup(&report_app, "yt-dlp", result)
 }

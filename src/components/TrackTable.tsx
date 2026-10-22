@@ -2,6 +2,7 @@ import { AudioLines, Clock3, Play, Heart, Ellipsis } from "lucide-react";
 import type { Track } from "../lib/library";
 import { time } from "../lib/library";
 import { prepareLyrics } from "../lib/lyricsPrefetch";
+import { prepareAudio, cancelAudioPreparation } from "../lib/extractor";
 import ArtistNames from "./ArtistNames";
 import IconButton from "./IconButton";
 type Props = {
@@ -43,8 +44,16 @@ export default function TrackTable({
           className={`track-row ${currentId === track.id ? "current" : ""}`}
           key={track.id}
           data-lyrics-track={track.id}
-          onMouseEnter={() => prepareLyrics(track, true)}
-          onFocus={() => prepareLyrics(track, true)}
+          onMouseEnter={() => {
+            prepareLyrics(track, true);
+            prepareAudio(track);
+          }}
+          onMouseLeave={cancelAudioPreparation}
+          onFocus={() => {
+            prepareLyrics(track, true);
+            prepareAudio(track);
+          }}
+          onBlur={cancelAudioPreparation}
           onDoubleClick={() => playTrack(track, list)}
         >
           <button

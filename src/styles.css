@@ -2558,8 +2558,9 @@ html[data-platform="desktop"][data-theme="light"] .toolbar {
   font-weight: 700;
   margin-bottom: 24px;
 }
-.account-brand svg {
-  color: var(--accent);
+.account-brand img {
+  display: block;
+  height: auto;
 }
 .account-card h1 {
   font-size: 30px;
@@ -2988,9 +2989,8 @@ button:active:not(:disabled) {
   background-clip: text;
   -webkit-background-clip: text;
   transform-origin: 50% 70%;
-}
-.lyric-word.is-singing {
   transform: translateY(var(--word-lift, 0px)) scale(var(--word-scale, 1));
+  transition: transform 100ms linear;
 }
 .lyric-word::after {
   content: attr(data-text);
@@ -3032,6 +3032,7 @@ button:active:not(:disabled) {
   .lyric-word,
   .lyric-word.is-singing {
     transform: none;
+    transition: none;
   }
   .lyric-word::after {
     display: none;

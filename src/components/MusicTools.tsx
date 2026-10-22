@@ -5,12 +5,19 @@ import { Check, LoaderCircle, RotateCw } from "lucide-react";
 
 type Status = { ready: boolean; version: string };
 const jobs = new Map<string, Promise<Status>>();
+const componentNames: Record<string, string> = {
+  ensure_media_tools: "FFmpeg",
+  ensure_music_module: "SpotiFLAC",
+  ensure_extractor_tool: "yt-dlp",
+};
 function setup(command: string) {
   let job = jobs.get(command);
   if (!job) {
     job = invoke<Status>(command).catch((error) => {
       jobs.delete(command);
-      throw error;
+      throw new Error(
+        `Ошибка подготовки ${componentNames[command] || command}: ${String(error)}`,
+      );
     });
     jobs.set(command, job);
   }
@@ -29,10 +36,12 @@ export function PlaybackSetup() {
   const [state, setState] = useState("loading");
   const [visible, setVisible] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [error, setError] = useState("");
   useEffect(() => {
     if (!("__TAURI_INTERNALS__" in window)) return;
     let live = true;
     setState("loading");
+    setError("");
     const timer = window.setTimeout(() => setVisible(true), 700);
     void Promise.all(
       [
@@ -44,9 +53,10 @@ export function PlaybackSetup() {
       () => {
         if (live) setState("ready");
       },
-      () => {
+      (error) => {
         if (live) {
           setState("error");
+          setError(errorMessage(error));
           setVisible(true);
         }
       },
@@ -70,7 +80,11 @@ export function PlaybackSetup() {
       {state === "error" ? (
         <>
           <span>
-            Не удалось подготовить воспроизведение. Проверьте подключение.
+            Не удалось подготовить воспроизведение.
+            <details className="playback-setup-details">
+              <summary>Подробности</summary>
+              <pre>{error}</pre>
+            </details>
           </span>
           <button
             className="text-button"
@@ -123,7 +137,7 @@ function Tool({ command, name }: { command: string; name: string }) {
       {error ? (
         <button
           className="icon-button"
-          aria-label={`Retry ${name} installation`}
+          aria-label={`Повторить установку ${name}`}
           onClick={() => setRevision((v) => v + 1)}
         >
           <RotateCw size={16} />

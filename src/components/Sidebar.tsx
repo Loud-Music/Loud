@@ -86,10 +86,13 @@ export default function Sidebar({
         onClick={() => navigate("Listen Now")}
         aria-label="Главная Loud"
       >
-        <span className="brand-icon">
-          <img src="/mascot.svg" alt="" width={32} height={28} />
-        </span>
-        <span>Loud</span>
+        <img
+          className="brand-wordmark"
+          src="/loud-logo.svg"
+          alt="LOUD"
+          width={136}
+          height={42}
+        />
       </button>
       <label className="search-field">
         <Search size={17} />

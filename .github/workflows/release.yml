@@ -10,6 +10,10 @@ on:
         type: choice
         options: [all, windows, linux]
         default: all
+      publish:
+        description: Publish packages to GitHub Releases
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -37,6 +41,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
       - run: node scripts/update-manifest.mjs
       - name: Publish
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,7 +100,7 @@ jobs:
           mkdir -p "$LOUD_PROFILE_DIR/user-data"
           node --input-type=module -e 'import {writeFileSync} from "node:fs"; writeFileSync(process.env.LOUD_PROFILE_DIR+"/user-data/settings.json", JSON.stringify({"loud:accounts:v1":JSON.stringify([{id:"legacy",name:"Linux build",created:Date.now()}]),"loud:last-account":"legacy"}));'
           xvfb-run -a bash -e -c '
-            src-tauri/target/release/loud-platform > "$LOUD_PROFILE_DIR/startup.log" 2>&1 &
+            src-tauri/target/release/bundle/appimage/*.AppImage > "$LOUD_PROFILE_DIR/startup.log" 2>&1 &
             app_pid=$!
             trap "kill $app_pid 2>/dev/null || true" EXIT
             for i in $(seq 1 240); do
@@ -103,7 +108,11 @@ jobs:
               if [ -f "$LOUD_PROFILE_DIR/tools/music-module/music-runtime-v2.ready" ] && [ -x "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/yt-dlp" ] && [ -x "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffprobe" ]; then break; fi
               sleep 1
             done
-            test -f "$LOUD_PROFILE_DIR/tools/music-module/music-runtime-v2.ready"
+            if [ ! -f "$LOUD_PROFILE_DIR/tools/music-module/music-runtime-v2.ready" ]; then
+              cat "$LOUD_PROFILE_DIR/startup.log"
+              cat "$LOUD_PROFILE_DIR/logs/playback.log" 2>/dev/null || true
+              exit 1
+            fi
             "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffmpeg" -version
             "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/ffprobe" -version
             "$LOUD_PROFILE_DIR/tools/ffmpeg-8.1/yt-dlp" --version
@@ -118,7 +127,17 @@ jobs:
           gst-inspect-1.0 flacdec
           gst-inspect-1.0 avdec_aac
           gst-inspect-1.0 mpg123audiodec
+      - name: Save Linux packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: Loud-linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.sig
+          if-no-files-found: error
       - name: Publish Linux packages
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.publish }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

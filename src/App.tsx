@@ -64,7 +64,7 @@ const idleTrack: Track = {
   title: "Ничего не играет",
   artist: "",
   album: "",
-  cover: "/mascot.svg",
+  cover: "/loud-symbol.svg",
   duration: 0,
   source: "Local",
 };

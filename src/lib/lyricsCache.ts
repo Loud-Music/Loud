@@ -3,6 +3,7 @@ import type { Lyrics } from "./lyrics";
 
 type Kind = "words" | "lines";
 const pending = new Map<string, Promise<Lyrics | undefined>>();
+const missing = new Map<string, number>();
 let database: Promise<IDBDatabase> | undefined;
 const memory = new Map<string, { at: number; value: Lyrics }>();
 function remember(key: string, value: Lyrics, at = Date.now()) {
@@ -68,6 +69,7 @@ export function cachedLyrics(
     return Promise.resolve(ready.value);
   const old = pending.get(key);
   if (old) return old;
+  if (Date.now() < (missing.get(key) || 0)) return Promise.resolve(undefined);
   let request!: Promise<Lyrics | undefined>;
   request = (async () => {
     const stored = await read(key);
@@ -78,8 +80,12 @@ export function cachedLyrics(
     try {
       const value = await load();
       if (value && pending.get(key) === request) {
+        missing.delete(key);
         remember(key, value);
         void write(key, value);
+      } else if (!value && !stored && pending.get(key) === request) {
+        missing.set(key, Date.now() + 60000);
+        if (missing.size > 256) missing.delete(missing.keys().next().value!);
       }
       return value || stored?.value;
     } catch (error) {
@@ -99,6 +105,7 @@ export async function clearLyricsCache(track: Track) {
   for (const kind of ["words", "lines"] as const) {
     pending.delete(identity(kind, track));
     memory.delete(identity(kind, track));
+    missing.delete(identity(kind, track));
   }
   try {
     const db = await open();

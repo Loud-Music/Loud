@@ -119,12 +119,32 @@ export default function LyricsPanel({
   const [clock, setClock] = useState(progress);
   const position = useRef({ progress, at: performance.now() });
   const jumped = useRef(false);
+  const manualScrollUntil = useRef(0);
+  useEffect(() => {
+    const element = audio?.current;
+    if (!element) return;
+    const update = () => {
+      const progress = Math.max(0, element.currentTime - timelineOffset);
+      jumped.current = true;
+      manualScrollUntil.current = 0;
+      position.current = { progress, at: performance.now() };
+      setClock(progress);
+    };
+    element.addEventListener("seeking", update);
+    element.addEventListener("seeked", update);
+    return () => {
+      element.removeEventListener("seeking", update);
+      element.removeEventListener("seeked", update);
+    };
+  }, [audio, timelineOffset]);
   useEffect(() => {
     const now = performance.now();
     const previous = position.current;
     const expected = playing ? (now - previous.at) / 1000 : 0;
-    if (Math.abs(progress - previous.progress - expected) > 0.9)
+    if (Math.abs(progress - previous.progress - expected) > 0.9) {
       jumped.current = true;
+      manualScrollUntil.current = 0;
+    }
     position.current = { progress, at: now };
     if (!playing) setClock(progress);
   }, [progress, playing]);
@@ -148,6 +168,7 @@ export default function LyricsPanel({
   const jump = useCallback(
     (time: number) => {
       jumped.current = true;
+      manualScrollUntil.current = 0;
       setClock(time);
       seek(time);
     },
@@ -202,7 +223,7 @@ export default function LyricsPanel({
   useEffect(() => {
     const box = scroll.current;
     const line = box?.querySelector<HTMLElement>('[aria-current="true"]');
-    if (!box || !line) return;
+    if (!box || !line || performance.now() < manualScrollUntil.current) return;
     const target = Math.max(
       0,
       Math.min(
@@ -221,6 +242,7 @@ export default function LyricsPanel({
     let frame = 0;
     let previous = performance.now();
     const tick = (now: number) => {
+      if (now < manualScrollUntil.current) return;
       const remaining = target - box.scrollTop;
       box.scrollTop +=
         remaining * (1 - Math.exp(-Math.min(40, now - previous) / 170));
@@ -273,7 +295,16 @@ export default function LyricsPanel({
           <X size={19} />
         </button>
       </header>
-      <div className="lyrics-scroll" ref={scroll}>
+      <div
+        className="lyrics-scroll"
+        ref={scroll}
+        onWheel={() => {
+          manualScrollUntil.current = performance.now() + 3000;
+        }}
+        onTouchMove={() => {
+          manualScrollUntil.current = performance.now() + 3000;
+        }}
+      >
         {loading || (!result && wordLoading) ? (
           <div className="lyrics-empty">
             <LoaderCircle className="spin" size={24} />

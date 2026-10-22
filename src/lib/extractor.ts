@@ -144,13 +144,16 @@ export function cachePlayingStream(track: Track, resolved: Track) {
     )
     .finally(() => streamCaching.delete(key));
 }
-const streamJobs = new Map<
-  string,
-  { expires: number; promise: Promise<Track> }
->();
+interface StreamJob {
+  expires: number;
+  promise: Promise<Track>;
+  listeners: Set<(track: Track) => void>;
+  prepared?: Track;
+}
+const streamJobs = new Map<string, StreamJob>();
 const warmedAudio = new Map<string, number>();
 let prefetchRunning = 0;
-let queuedPrefetch: Track | undefined;
+const queuedPrefetch = new Map<string, Track>();
 let intentTimer: ReturnType<typeof setTimeout>;
 export function prepareAudio(track: Track) {
   clearTimeout(intentTimer);
@@ -180,11 +183,15 @@ export function prefetchAudio(track: Track) {
   const key = audioCacheIdentity(track);
   if (Date.now() < (warmedAudio.get(key) || 0)) return;
   if (prefetchRunning >= 2) {
-    queuedPrefetch = track;
+    queuedPrefetch.set(key, track);
+    if (queuedPrefetch.size > 3)
+      queuedPrefetch.delete(queuedPrefetch.keys().next().value!);
     return;
   }
   prefetchRunning++;
   warmedAudio.set(key, Date.now() + 180000);
+  if (warmedAudio.size > 256)
+    warmedAudio.delete(warmedAudio.keys().next().value!);
   void resolveExtracted(track, true)
     .then((resolved) => cachePlayingStream(track, resolved))
     .catch((error) => {
@@ -193,9 +200,11 @@ export function prefetchAudio(track: Track) {
     })
     .finally(() => {
       prefetchRunning--;
-      const next = queuedPrefetch;
-      queuedPrefetch = undefined;
-      if (next) prefetchAudio(next);
+      while (prefetchRunning < 2 && queuedPrefetch.size) {
+        const next = queuedPrefetch.entries().next().value!;
+        queuedPrefetch.delete(next[0]);
+        prefetchAudio(next[1]);
+      }
     });
 }
 export async function resolveExtracted(
@@ -241,16 +250,33 @@ export async function resolveExtracted(
       if (excluded.length) streamJobs.delete(key);
       const existing = !excluded.length ? streamJobs.get(key) : undefined;
       if (existing && Date.now() < existing.expires) {
-        const resolved = await existing.promise;
-        prepared?.(resolved);
-        playbackLog("stream-reuse", track);
-        return { ...resolved, id: track.id, inLibrary: track.inLibrary };
+        if (prepared) {
+          existing.listeners.add(prepared);
+          if (existing.prepared) prepared(existing.prepared);
+        }
+        try {
+          const resolved = await existing.promise;
+          playbackLog("stream-reuse", track);
+          return { ...resolved, id: track.id, inLibrary: track.inLibrary };
+        } finally {
+          if (prepared) existing.listeners.delete(prepared);
+        }
       }
-      const promise = resolveStreaming(track, excluded, prepared);
+      const listeners = new Set<(track: Track) => void>();
+      if (prepared) listeners.add(prepared);
+      const job: StreamJob = {
+        expires: Date.now() + 180000,
+        listeners,
+        promise: resolveStreaming(track, excluded, (candidate) => {
+          job.prepared = candidate;
+          for (const listener of listeners) listener(candidate);
+        }),
+      };
+      const promise = job.promise;
       if (!excluded.length) {
         if (streamJobs.size >= 32)
           streamJobs.delete(streamJobs.keys().next().value!);
-        streamJobs.set(key, { expires: Date.now() + 180000, promise });
+        streamJobs.set(key, job);
         void promise.then(
           (value) => {
             if (value.nativeKey && streamJobs.get(key)?.promise === promise)
@@ -262,7 +288,7 @@ export async function resolveExtracted(
           },
         );
       }
-      const resolved = await promise;
+      const resolved = await promise.finally(() => listeners.clear());
       playbackLog("resolve-ready", track, {
         elapsedMs: Math.round(performance.now() - started),
         format: resolved.format,
@@ -514,26 +540,16 @@ async function resolveStreaming(
   prepared?: (track: Track) => void,
 ): Promise<Track> {
   if ((track.artists?.length || 0) < 2 && /^deezer:\d+$/.test(track.id)) {
-    let timer: ReturnType<typeof setTimeout>;
-    try {
-      const metadata = await Promise.race([
-        catalogJSON<{ contributors?: { name: string }[] }>(
-          "deezer",
-          `/track/${track.id.slice(7)}`,
-        ),
-        new Promise<undefined>((resolve) => {
-          timer = setTimeout(() => resolve(undefined), 1200);
-        }),
-      ]);
-      if (metadata?.contributors?.length)
-        track = {
-          ...track,
-          artists: metadata.contributors.map((artist) => artist.name),
-        };
-    } catch {
-    } finally {
-      clearTimeout(timer!);
-    }
+    track = { ...track };
+    void catalogJSON<{ contributors?: { name: string }[] }>(
+      "deezer",
+      `/track/${track.id.slice(7)}`,
+    )
+      .then((metadata) => {
+        if (metadata.contributors?.length)
+          track.artists = metadata.contributors.map((artist) => artist.name);
+      })
+      .catch(() => {});
   }
   const resolveCandidate = async (candidate: Track): Promise<Track> => {
     if (!candidate.extractorUrl)
@@ -593,7 +609,9 @@ async function resolveStreaming(
       });
       if (
         !direct &&
-        /No servers available|HTTP (?:403|429|502|503)\b/i.test(String(error))
+        /No servers available|HTTP (?:403|429|502|503)\b|timed out/i.test(
+          String(error),
+        )
       )
         lucidaUnavailableUntil.set(host, Date.now() + 15000);
       throw error;

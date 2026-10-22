@@ -61,11 +61,13 @@ export function chooseStream(
     const attempted = new Set<string>();
     const queue: Track[] = [];
     let amazonRunning = 0;
+    let fallbackRunning = 0;
     let running = 0,
       discovering = true,
       primaryDiscovering = !!dependencies.discoverPrimary;
     let settled = false,
       releaseFallback = false,
+      releaseSecondary = false,
       warmed = false;
     let best: Track | undefined;
     const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -120,22 +122,25 @@ export function chooseStream(
         return finish(best);
       queue.sort((a, b) => sourcePriority(a) - sourcePriority(b));
       while (running < 4 && queue.length) {
-        const index = queue.findIndex(
-          (item) =>
-            sourcePriority(item) !== 1 ||
-            (!primaryDiscovering && !amazonRunning),
-        );
+        const index = queue.findIndex((item) => {
+          const priority = sourcePriority(item);
+          if (priority === 0) return amazonRunning < 1;
+          if (priority === 2) return fallbackRunning < 2;
+          return releaseSecondary || (!primaryDiscovering && !amazonRunning);
+        });
         if (index < 0) break;
         const candidate = queue.splice(index, 1)[0];
         attempted.add(candidate.extractorUrl || candidate.src || "");
         running++;
         if (sourcePriority(candidate) === 0) amazonRunning++;
+        if (sourcePriority(candidate) === 2) fallbackRunning++;
         let completed = false;
         const done = (value?: Track) => {
           if (completed) return;
           completed = true;
           running--;
           if (sourcePriority(candidate) === 0) amazonRunning--;
+          if (sourcePriority(candidate) === 2) fallbackRunning--;
           clearTimeout(timer);
           timers.delete(timer);
           if (settled) return;
@@ -185,6 +190,12 @@ export function chooseStream(
         alternatives: undefined,
       })),
     ].forEach(add);
+    timers.add(
+      setTimeout(() => {
+        releaseSecondary = true;
+        drain();
+      }, 1800),
+    );
     timers.add(
       setTimeout(() => {
         releaseFallback = true;

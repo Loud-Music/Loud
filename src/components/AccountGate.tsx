@@ -1,6 +1,6 @@
 import { errorMessage } from "../lib/errors";
 import { useState } from "react";
-import { ArrowLeft, LoaderCircle, Music2, Plus, UserRound } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Plus, UserRound } from "lucide-react";
 import App from "../App";
 import {
   createAccount,
@@ -71,7 +71,7 @@ export default function AccountGate() {
         }}
       >
         <div className="account-brand">
-          <Music2 size={25} /> Loud
+          <img src="/loud-logo.svg" alt="LOUD" width={160} height={49} />
         </div>
         <h1>{creating ? "Создать локальный профиль" : "Выберите профиль"}</h1>
         <p>

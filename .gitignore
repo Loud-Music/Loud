@@ -23,3 +23,9 @@ verification/
 screenshots/
 releases/
 src-tauri/gen/
+design/
+**/*banner*.svg
+**/*banner*.png
+**/*banner*.jpg
+**/*banner*.webp
+mockups/

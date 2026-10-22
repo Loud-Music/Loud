@@ -172,11 +172,8 @@ export default function SettingsDialog({
       >
         <aside className="prefs-sidebar">
           <div className="prefs-brand">
-            <span>
-              <img src="/mascot.svg" alt="" width={30} height={26} />
-            </span>
             <div>
-              <strong>Loud</strong>
+              <img src="/loud-logo.svg" alt="LOUD" width={116} height={36} />
               <small>Настройки</small>
             </div>
           </div>
@@ -507,10 +504,13 @@ export default function SettingsDialog({
             )}
             {section === "about" && (
               <div className="prefs-about">
-                <span className="prefs-app-icon">
-                  <img src="/mascot.svg" alt="Loud" width={64} height={52} />
-                </span>
-                <h1>Loud</h1>
+                <img
+                  className="prefs-about-logo"
+                  src="/loud-logo.svg"
+                  alt="LOUD"
+                  width={208}
+                  height={64}
+                />
                 <p>Версия {version}</p>
                 <UpdateSettings />
                 <div className="prefs-about-line" />

@@ -3,14 +3,17 @@ import type { Track } from "./library";
 import { loadKaraoke, loadLyrics } from "./lyrics";
 
 const waiting = new Map<string, Track>();
+const urgent = new Set<string>();
 const attempted = new Map<string, number>();
 let active = 0;
 const keyFor = (track: Track) =>
   JSON.stringify([track.artist, track.title, Math.round(track.duration)]);
 function drain() {
-  while (active < 2 && waiting.size) {
+  while (waiting.size) {
     const [key, track] = waiting.entries().next().value!;
+    if (active >= (urgent.has(key) ? 3 : 2)) break;
     waiting.delete(key);
+    urgent.delete(key);
     active++;
     void Promise.allSettled([loadKaraoke(track), loadLyrics(track)]).finally(
       () => {
@@ -29,14 +32,19 @@ export function prepareLyrics(track: Track, priority = false) {
   attempted.set(key, Date.now());
   if (attempted.size > 256) attempted.delete(attempted.keys().next().value!);
   if (priority) {
+    urgent.add(key);
     const rest = [...waiting];
     waiting.clear();
+    for (const [id, item] of rest)
+      if (id !== key && urgent.has(id)) waiting.set(id, item);
     waiting.set(key, track);
-    for (const [id, item] of rest) if (id !== key) waiting.set(id, item);
+    for (const [id, item] of rest)
+      if (id !== key && !urgent.has(id)) waiting.set(id, item);
   } else waiting.set(key, track);
   while (waiting.size > 12) {
     const last = [...waiting.keys()].at(-1)!;
     waiting.delete(last);
+    urgent.delete(last);
     attempted.delete(last);
   }
   drain();
