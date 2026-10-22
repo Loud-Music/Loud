@@ -18,7 +18,15 @@ import {
   X,
 } from "lucide-react";
 import type { ChangeEvent } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import AlbumPage from "./components/AlbumPage";
 import ArtistCard from "./components/ArtistCard";
 import ArtistProfile from "./components/ArtistProfile";
@@ -31,7 +39,6 @@ import { PlaybackSetup, initializeMusicTools } from "./components/MusicTools";
 import Player from "./components/Player";
 import PlaylistDialog from "./components/PlaylistDialog";
 import QueuePanel from "./components/QueuePanel";
-import SettingsDialog from "./components/SettingsDialog";
 import Sidebar from "./components/Sidebar";
 import TrackMenu from "./components/TrackMenu";
 import TrackTable from "./components/TrackTable";
@@ -59,6 +66,8 @@ import { mergeSearch } from "./lib/search";
 import { useDiscordPresence } from "./lib/useDiscordPresence";
 import usePlayback from "./lib/usePlayback";
 import useWave from "./lib/useWave";
+const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
+
 const idleTrack: Track = {
   id: "",
   title: "Ничего не играет",
@@ -129,9 +138,12 @@ export default function App({
   const linkTarget = useRef<Track | null>(null);
   const dragDepth = useRef(0);
   const current = tracks.find((t) => t.id === currentId) || idleTrack;
-  const gaplessQueue = queue.filter((id) =>
-    tracks.some((track) => track.id === id && track.src),
-  );
+  const gaplessQueue = useMemo(() => {
+    const playable = new Set(
+      tracks.filter((track) => track.src).map((track) => track.id),
+    );
+    return queue.filter((id) => playable.has(id));
+  }, [queue, tracks]);
   const gaplessIndex = gaplessQueue.indexOf(currentId);
   const gaplessNextId = shuffle
     ? undefined
@@ -257,48 +269,58 @@ export default function App({
     }
   }, [current]);
 
-  const navigate = (next: View) => {
-    if (view !== next) {
-      setHistory((h) => [...h, view]);
-      setForward([]);
-      setView(next);
-    }
-    setSearch("");
-  };
-  const toggleFavorite = (id: string) => {
-    const track =
-      tracks.find((t) => t.id === id) ||
-      (selected?.id === id ? selected : undefined);
-    if (track && !favorites.includes(id) && track.attributionUrl) {
-      setTracks((old) => [
-        ...old.filter((t) => t.id !== id),
-        { ...track, inLibrary: true },
-      ]);
-      void storeTracks([{ track }]).catch(() =>
-        notify("Не удалось сохранить трек в избранное."),
+  const navigate = useCallback(
+    (next: View) => {
+      if (view !== next) {
+        setHistory((h) => [...h, view]);
+        setForward([]);
+        setView(next);
+      }
+      setSearch("");
+    },
+    [view],
+  );
+  const toggleFavorite = useCallback(
+    (id: string) => {
+      const track =
+        tracks.find((t) => t.id === id) ||
+        (selected?.id === id ? selected : undefined);
+      if (track && !favorites.includes(id) && track.attributionUrl) {
+        setTracks((old) => [
+          ...old.filter((t) => t.id !== id),
+          { ...track, inLibrary: true },
+        ]);
+        void storeTracks([{ track }]).catch(() =>
+          notify("Не удалось сохранить трек в избранное."),
+        );
+      }
+      if (track)
+        wave.feedback(track, favorites.includes(id) ? "unlike" : "like");
+      setFavorites((old) =>
+        old.includes(id) ? old.filter((x) => x !== id) : [...old, id],
       );
-    }
-    if (track) wave.feedback(track, favorites.includes(id) ? "unlike" : "like");
-    setFavorites((old) =>
-      old.includes(id) ? old.filter((x) => x !== id) : [...old, id],
-    );
-  };
-  const playTrack = (track: Track, list?: Track[]) => {
-    setWaveActive(false);
-    waveSession.current++;
-    if (!track.src) {
-      setSelected(track);
-      notify("Для воспроизведения добавьте аудиофайл к этой записи.");
-      return;
-    }
-    if (list) setQueue(list.filter((t) => t.src).map((t) => t.id));
-    if (track.id === currentId) {
-      void play();
-    } else {
-      setCurrentId(track.id);
-      setPlaying(true);
-    }
-  };
+    },
+    [tracks, selected, favorites, wave.feedback, notify],
+  );
+  const playTrack = useCallback(
+    (track: Track, list?: Track[]) => {
+      setWaveActive(false);
+      waveSession.current++;
+      if (!track.src) {
+        setSelected(track);
+        notify("Для воспроизведения добавьте аудиофайл к этой записи.");
+        return;
+      }
+      if (list) setQueue(list.filter((t) => t.src).map((t) => t.id));
+      if (track.id === currentId) {
+        void play();
+      } else {
+        setCurrentId(track.id);
+        setPlaying(true);
+      }
+    },
+    [currentId, play, setPlaying, notify],
+  );
   const advance = useCallback(
     (direction: number, resume = false) => {
       if (
@@ -662,12 +684,15 @@ export default function App({
     await getCurrentWindow()[action]();
   }
 
-  const openArtist = (name: string) => {
-    if (name.trim()) {
-      setSelected(null);
-      navigate(`artist:${name}`);
-    }
-  };
+  const openArtist = useCallback(
+    (name: string) => {
+      if (name.trim()) {
+        setSelected(null);
+        navigate(`artist:${name}`);
+      }
+    },
+    [navigate],
+  );
   const followArtist = (name: string) => {
     setFollowedArtists((old) => {
       const next = old.some((item) => artistKey(item) === artistKey(name))
@@ -689,7 +714,10 @@ export default function App({
         cover_big: track.cover,
       }),
     );
-  const libraryTracks = tracks.filter((t) => t.inLibrary);
+  const libraryTracks = useMemo(
+    () => tracks.filter((t) => t.inLibrary),
+    [tracks],
+  );
   const playlist = playlists.find((p) => view === `playlist:${p.id}`);
   const viewTitle =
     albumSeed?.title ||
@@ -699,38 +727,47 @@ export default function App({
     view.startsWith("source:")
       ? view.substring(view.indexOf(":") + 1)
       : viewLabel(view));
-  let visible = playlist
-    ? playlist.tracks
-        .map((id) => tracks.find((t) => t.id === id))
-        .filter((t): t is Track => !!t)
-    : view === "Favorites"
-      ? tracks.filter((t) => favorites.includes(t.id))
-      : view.startsWith("album:")
-        ? tracks.filter((t) => t.album === view.slice(6))
-        : view.startsWith("artist:")
-          ? tracks.filter((t) => t.artist === view.slice(7))
-          : view.startsWith("source:")
-            ? tracks.filter((t) => t.source === view.slice(7))
-            : libraryTracks;
-  visible = visible.filter(
-    (t) =>
-      !search ||
-      `${t.title} ${t.artist} ${t.album}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
+  const visible = useMemo(() => {
+    let items = playlist
+      ? playlist.tracks
+          .map((id) => tracks.find((t) => t.id === id))
+          .filter((t): t is Track => !!t)
+      : view === "Favorites"
+        ? tracks.filter((t) => favorites.includes(t.id))
+        : view.startsWith("album:")
+          ? tracks.filter((t) => t.album === view.slice(6))
+          : view.startsWith("artist:")
+            ? tracks.filter((t) => t.artist === view.slice(7))
+            : view.startsWith("source:")
+              ? tracks.filter((t) => t.source === view.slice(7))
+              : libraryTracks;
+    items = items.filter(
+      (t) =>
+        !search ||
+        `${t.title} ${t.artist} ${t.album}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    );
+    return mergeSearch(items, "");
+  }, [playlist, tracks, view, favorites, libraryTracks, search]);
+  const albums = useMemo(
+    () => [...new Map(visible.map((t) => [t.album, t])).values()],
+    [visible],
   );
-  visible = mergeSearch(visible, "");
-  const albums = [...new Map(visible.map((t) => [t.album, t])).values()];
   const home = view === "Listen Now" && !search;
   const grid = ["Albums", "Discover", "Artists"].includes(view) && !search;
-  const artists = [
-    ...new Map(
-      [...libraryTracks.flatMap(trackArtists), ...followedArtists].map(
-        (name) => [artistKey(name), name],
-      ),
-    ).values(),
-  ].sort((a, b) => a.localeCompare(b));
-  const playable = visible.filter((t) => t.src);
+  const artists = useMemo(
+    () =>
+      [
+        ...new Map(
+          [...libraryTracks.flatMap(trackArtists), ...followedArtists].map(
+            (name) => [artistKey(name), name],
+          ),
+        ).values(),
+      ].sort((a, b) => a.localeCompare(b)),
+    [libraryTracks, followedArtists],
+  );
+  const playable = useMemo(() => visible.filter((t) => t.src), [visible]);
   useLyricsPrefetch(
     wave.recommendations.length && view === "Моя волна"
       ? wave.recommendations
@@ -1100,7 +1137,7 @@ export default function App({
                       onClick={() => playTrack(playable[0], playable)}
                     >
                       <Play size={14} fill="currentColor" /> Слушать
-                      {playlist ? " playlist" : " all"}
+                      {playlist ? " плейлист" : " всё"}
                     </button>
                     <button
                       className="button button-subtle"
@@ -1282,29 +1319,31 @@ export default function App({
         />
       )}
       {modal === "settings" && (
-        <SettingsDialog
-          gapless={gapless}
-          onGapless={setGapless}
-          equalizer={equalizer}
-          onEqualizer={setEqualizer}
-          theme={theme}
-          onTheme={setTheme}
-          preferExclusive={preferExclusive}
-          onExclusive={setExclusive}
-          exclusive={exclusive}
-          output={output}
-          volume={volume}
-          onVolume={setVolume}
-          accountName={account.name}
-          tracks={libraryTracks}
-          playlistCount={playlists.length}
-          onImport={() => setModal("import")}
-          onSwitchAccount={() => {
-            setModal(null);
-            onSwitchAccount();
-          }}
-          close={() => setModal(null)}
-        />
+        <Suspense fallback={null}>
+          <SettingsDialog
+            gapless={gapless}
+            onGapless={setGapless}
+            equalizer={equalizer}
+            onEqualizer={setEqualizer}
+            theme={theme}
+            onTheme={setTheme}
+            preferExclusive={preferExclusive}
+            onExclusive={setExclusive}
+            exclusive={exclusive}
+            output={output}
+            volume={volume}
+            onVolume={setVolume}
+            accountName={account.name}
+            tracks={libraryTracks}
+            playlistCount={playlists.length}
+            onImport={() => setModal("import")}
+            onSwitchAccount={() => {
+              setModal(null);
+              onSwitchAccount();
+            }}
+            close={() => setModal(null)}
+          />
+        </Suspense>
       )}
       {selected && (
         <TrackMenu

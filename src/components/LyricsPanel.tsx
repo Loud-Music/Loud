@@ -151,7 +151,13 @@ export default function LyricsPanel({
   useEffect(() => {
     if (!playing) return;
     let frame = 0;
-    const tick = () => {
+    let last = 0;
+    const tick = (now: number) => {
+      frame = 0;
+      if (document.hidden) return;
+      frame = requestAnimationFrame(tick);
+      if (now - last < 1000 / 30) return;
+      last = now;
       const element = audio?.current;
       const anchor = position.current;
       setClock(
@@ -160,10 +166,19 @@ export default function LyricsPanel({
           : anchor.progress +
               Math.min((performance.now() - anchor.at) / 1000, 0.35),
       );
-      frame = requestAnimationFrame(tick);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    const wake = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      last = 0;
+      if (!document.hidden) frame = requestAnimationFrame(tick);
+    };
+    document.addEventListener("visibilitychange", wake);
+    wake();
+    return () => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("visibilitychange", wake);
+    };
   }, [playing, audio, track.id, timelineOffset]);
   const jump = useCallback(
     (time: number) => {

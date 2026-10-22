@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Loud",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "identifier": "com.loud.platform",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -28,14 +28,21 @@
       "csp": "default-src 'self'; script-src 'self' https://js-cdn.music.apple.com; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https:; media-src 'self' http://127.0.0.1:* blob: asset: http://asset.localhost https:; connect-src 'self' http://127.0.0.1:* blob: asset: http://asset.localhost ipc: http://ipc.localhost https://*.sndcdn.com https://*.soundcloud.cloud https://lucida.to https://*.lucida.to https://*.apple.com https://*.mzstatic.com https://archive.org https://*.archive.org https://api.audius.co https://commons.wikimedia.org https://upload.wikimedia.org; frame-src https://*.apple.com;",
       "assetProtocol": {
         "enable": true,
-        "scope": ["$APPCACHE/audio/**"]
+        "scope": [
+          "$APPCACHE/audio/**"
+        ]
       }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "publisher": "Loud",
     "copyright": "Copyright (c) 2026 Loud. All rights reserved.",
     "licenseFile": "../LICENSE.txt",
@@ -51,7 +58,10 @@
       "allowDowngrades": false,
       "nsis": {
         "installMode": "currentUser",
-        "languages": ["English", "Russian"],
+        "languages": [
+          "English",
+          "Russian"
+        ],
         "displayLanguageSelector": true,
         "compression": "lzma",
         "startMenuFolder": "Loud"

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="560" viewBox="0 0 1440 560" fill="none">
+<title>LOUD — desktop music player for Windows and Linux</title>
+<desc>The LOUD wordmark and its D symbol with ears on a dark background.</desc>
+<defs><clipPath id="frame"><rect width="1440" height="560" rx="28"/></clipPath></defs>
+<g clip-path="url(#frame)">
+<rect width="1440" height="560" fill="#101011"/>
+<path d="M914 0H1440V560H802Z" fill="#19191C"/>
+<svg x="895" y="79" width="360" height="360" viewBox="0 0 256 256" opacity=".13"><g transform="translate(-480 14) skewX(-12)" fill="none" stroke="#F5F4EA" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"><path d="M573 49L575 12Q575 1 584 7L623 34Z" fill="#F5F4EA" stroke="none"/><path d="M650 34L686 7Q695 1 697 12L706 67Z" fill="#F5F4EA" stroke="none"/><path d="M594 48V190H636C684 190 705 166 705 119C705 72 684 48 636 48Z"/></g></svg>
+<svg x="869" y="53" width="360" height="360" viewBox="0 0 256 256"><g transform="translate(-480 14) skewX(-12)" fill="none" stroke="#F5F4EA" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"><path d="M573 49L575 12Q575 1 584 7L623 34Z" fill="#F5F4EA" stroke="none"/><path d="M650 34L686 7Q695 1 697 12L706 67Z" fill="#F5F4EA" stroke="none"/><path d="M594 48V190H636C684 190 705 166 705 119C705 72 684 48 636 48Z"/></g></svg>
+<svg x="73" y="147" width="659" height="203" viewBox="0 0 780 240"><g transform="translate(50 0) skewX(-12)" fill="none" stroke="#F5F4EA" stroke-width="42" stroke-linecap="round" stroke-linejoin="round"><path d="M72 48V190H163"/><path d="M282 44C242 44 224 65 224 107V132C224 174 242 195 282 195C322 195 340 174 340 132V107C340 65 322 44 282 44Z"/><path d="M407 48V132C407 174 425 195 464 195C503 195 521 174 521 132V48"/><path d="M573 49L575 12Q575 1 584 7L623 34Z" fill="#F5F4EA" stroke="none"/><path d="M650 34L686 7Q695 1 697 12L706 67Z" fill="#F5F4EA" stroke="none"/><path d="M594 48V190H636C684 190 705 166 705 119C705 72 684 48 636 48Z"/></g></svg>
+<g font-family="Google Sans Flex, Arial, sans-serif">
+<text x="102" y="395" fill="#B8B8BF" font-size="27" letter-spacing="-.4">Desktop music player.</text>
+<text x="104" y="491" fill="#8F8F99" font-size="18">Windows / Linux</text>
+<text x="1336" y="491" text-anchor="end" fill="#8F8F99" font-size="18">React + Tauri</text>
+</g>
+</g>
+</svg>

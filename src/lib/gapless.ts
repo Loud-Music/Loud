@@ -236,9 +236,11 @@ export class GaplessSession {
   }
 
   active(): GaplessSegment | undefined {
-    return [...this.segments]
-      .reverse()
-      .find((segment) => this.audio.currentTime + 0.000001 >= segment.offset);
+    const position = this.audio.currentTime + 0.000001;
+    for (let i = this.segments.length - 1; i >= 0; i--) {
+      if (position >= this.segments[i].offset) return this.segments[i];
+    }
+    return undefined;
   }
 
   finishIfNeeded() {

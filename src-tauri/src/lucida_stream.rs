@@ -38,13 +38,22 @@ pub fn client() -> Result<&'static Client, String> {
         .map_err(Clone::clone)
 }
 
-fn body(mut response: Response) -> Result<String, String> {
+fn body(response: Response) -> Result<String, String> {
     if !response.status().is_success() {
         return Err(format!("Lucida returned HTTP {}", response.status()));
     }
+    let gzip = response
+        .headers()
+        .get(reqwest::header::CONTENT_ENCODING)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("gzip"));
+    let reader: Box<dyn Read> = if gzip {
+        Box::new(flate2::read::GzDecoder::new(response))
+    } else {
+        Box::new(response)
+    };
     let mut bytes = Vec::new();
-    response
-        .by_ref()
+    reader
         .take(8 * 1024 * 1024 + 1)
         .read_to_end(&mut bytes)
         .map_err(|e| e.to_string())?;
@@ -180,7 +189,7 @@ fn metadata(client: &Client, url: &str) -> Result<(Value, usize, bool), String> 
     let response = client
         .get("https://lucida.to/__data.json")
         .query(&[("url", url), ("x-sveltekit-invalidated", "01")])
-        .header("Accept-Encoding", "identity")
+        .header("Accept-Encoding", "gzip")
         .timeout(Duration::from_secs(6))
         .send()
         .map_err(|e| e.to_string())?;
@@ -198,7 +207,7 @@ fn metadata(client: &Client, url: &str) -> Result<(Value, usize, bool), String> 
     let response = client
         .get("https://lucida.to/")
         .query(&[("url", url)])
-        .header("Accept-Encoding", "identity")
+        .header("Accept-Encoding", "gzip")
         .timeout(Duration::from_secs(6))
         .send()
         .map_err(|e| e.to_string())?;

@@ -131,6 +131,7 @@ fn available_path(entry: &Entry) -> Result<PathBuf, String> {
 }
 
 fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::error::Error>> {
+    socket.set_nodelay(true)?;
     socket.set_read_timeout(Some(Duration::from_secs(3)))?;
     socket.set_write_timeout(Some(Duration::from_secs(15)))?;
     let mut header = Vec::with_capacity(1024);
@@ -171,19 +172,6 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
         .filter_map(|line| line.split_once(':'))
         .find(|(name, _)| name.eq_ignore_ascii_case("Range"))
         .map(|(_, value)| value.trim().to_owned());
-    let needs_complete = range.as_ref().is_some_and(|r| r != "bytes=0-");
-    while needs_complete
-        && entry
-            .result
-            .lock()
-            .map_err(|_| "Stream state unavailable")?
-            .is_none()
-    {
-        if entry.created.elapsed() > Duration::from_secs(180) {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
     let mut file = fs::File::open(available_path(&entry)?)?;
     let completed = entry
         .result
@@ -197,28 +185,23 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
         fs::read_to_string(entry.partial.with_extension("length"))
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
+            .filter(|total| *total >= size && *total > 0)
     };
     let mut start = 0;
-    let mut end = size.saturating_sub(1);
+    let mut end = total.map(|size| size.saturating_sub(1));
     let mut partial = false;
-    if completed {
-        if let Some(value) = range.as_ref().and_then(|r| r.strip_prefix("bytes=")) {
-            let Some((first, last)) = value.split_once('-') else {
-                return Ok(());
-            };
-            if first.is_empty() {
-                start = size.saturating_sub(last.parse::<u64>()?);
-            } else {
-                start = first.parse()?;
-                if !last.is_empty() {
-                    end = last.parse::<u64>()?.min(end);
-                }
+    if let Some(total) = total {
+        match requested_range(range.as_deref(), total) {
+            Ok(Some((first, last))) => {
+                start = first;
+                end = Some(last);
+                partial = true;
             }
-            if start > end || start >= size {
-                write!(socket, "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{size}\r\nAccess-Control-Allow-Origin: {origin}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
+            Ok(None) => {}
+            Err(()) => {
+                write!(socket, "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{total}\r\nAccess-Control-Allow-Origin: {origin}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
                 return Ok(());
             }
-            partial = true;
         }
     }
     let mut head = [0; 12];
@@ -231,58 +214,101 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
     } else {
         "audio/mpeg"
     };
-    let streaming_range = !completed && total.is_some() && range.as_deref() == Some("bytes=0-");
-    write!(socket, "HTTP/1.1 {}\r\nContent-Type: {mime}\r\nAccess-Control-Allow-Origin: {origin}\r\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length\r\nCache-Control: no-store\r\nConnection: close\r\n", if partial || streaming_range { "206 Partial Content" } else { "200 OK" })?;
-    if completed {
+    write!(socket, "HTTP/1.1 {}\r\nContent-Type: {mime}\r\nAccess-Control-Allow-Origin: {origin}\r\nAccess-Control-Expose-Headers: Content-Range, Accept-Ranges, Content-Length\r\nCache-Control: no-store\r\nConnection: close\r\n", if partial { "206 Partial Content" } else { "200 OK" })?;
+    if let Some(total) = total {
+        let last = end.unwrap_or(total.saturating_sub(1));
         write!(
             socket,
             "Accept-Ranges: bytes\r\nContent-Length: {}\r\n",
-            end - start + 1
+            last - start + 1
         )?;
         if partial {
-            write!(socket, "Content-Range: bytes {start}-{end}/{size}\r\n")?;
+            write!(socket, "Content-Range: bytes {start}-{last}/{total}\r\n")?;
         }
-    } else if let Some(total) = total {
-        write!(
-            socket,
-            "Accept-Ranges: bytes\r\nContent-Length: {total}\r\n"
-        )?;
-        if streaming_range {
-            write!(
-                socket,
-                "Content-Range: bytes 0-{}/{total}\r\n",
-                total.saturating_sub(1)
-            )?;
-        }
+    } else {
+        socket.write_all(b"Accept-Ranges: none\r\n")?;
     }
     socket.write_all(b"\r\n")?;
     socket.flush()?;
     if request[0] == "HEAD" {
         return Ok(());
     }
-    if completed {
-        std::io::copy(&mut file.take(end - start + 1), &mut socket)?;
-    } else {
-        let mut buffer = [0; 32768];
-        loop {
-            let read = file.read(&mut buffer)?;
-            if read > 0 {
-                socket.write_all(&buffer[..read])?;
-            } else if entry
-                .result
-                .lock()
-                .map_err(|_| "Stream state unavailable")?
-                .is_some()
-            {
-                let last = file.read(&mut buffer)?;
-                if last == 0 {
-                    break;
-                }
-                socket.write_all(&buffer[..last])?;
-            } else {
-                std::thread::sleep(Duration::from_millis(15));
-            }
+    let mut remaining = end.map(|last| last - start + 1);
+    let mut buffer = [0; 65536];
+    let mut progress = Instant::now();
+    loop {
+        if remaining == Some(0) {
+            break;
         }
+        let limit = remaining
+            .unwrap_or(buffer.len() as u64)
+            .min(buffer.len() as u64) as usize;
+        let read = file.read(&mut buffer[..limit])?;
+        if read > 0 {
+            socket.write_all(&buffer[..read])?;
+            if let Some(remaining) = remaining.as_mut() {
+                *remaining -= read as u64;
+            }
+            progress = Instant::now();
+            continue;
+        }
+        let completed = entry
+            .result
+            .lock()
+            .map_err(|_| "Stream state unavailable")?
+            .as_ref()
+            .map(|result| result.is_ok());
+        if completed == Some(false) {
+            return Err("Stream download failed".into());
+        }
+        if completed == Some(true) {
+            let last = file.read(&mut buffer[..limit])?;
+            if last == 0 {
+                break;
+            }
+            socket.write_all(&buffer[..last])?;
+            if let Some(remaining) = remaining.as_mut() {
+                *remaining -= last as u64;
+            }
+        } else if progress.elapsed() > Duration::from_secs(30) {
+            return Err("Stream download stalled".into());
+        }
+        std::thread::sleep(Duration::from_millis(10));
     }
     Ok(())
+}
+
+fn requested_range(raw: Option<&str>, size: u64) -> Result<Option<(u64, u64)>, ()> {
+    let Some(value) = raw.and_then(|value| value.strip_prefix("bytes=")) else {
+        return Ok(None);
+    };
+    let Some((first, last)) = value.split_once('-') else {
+        return Ok(None);
+    };
+    let (start, end) = if first.is_empty() {
+        let Ok(length) = last.parse::<u64>() else {
+            return Ok(None);
+        };
+        if length == 0 {
+            return Err(());
+        }
+        (size.saturating_sub(length), size.saturating_sub(1))
+    } else {
+        let Ok(start) = first.parse::<u64>() else {
+            return Ok(None);
+        };
+        let end = if last.is_empty() {
+            size.saturating_sub(1)
+        } else {
+            let Ok(end) = last.parse::<u64>() else {
+                return Ok(None);
+            };
+            end.min(size.saturating_sub(1))
+        };
+        (start, end)
+    };
+    if start > end || start >= size {
+        return Err(());
+    }
+    Ok(Some((start, end)))
 }

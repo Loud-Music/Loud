@@ -598,6 +598,7 @@ pub async fn extractor_stream(
         data["url"] = json!(local);
         data["format"] = json!(format);
         data["timings"]["firstBytesMs"] = json!(began.elapsed().as_millis());
+        let _ = playback_log(app, json!({"stage":"lucida-stream-ready","timings":data["timings"],"format":data["format"]}));
         data["size"] = json!(0);
         data["key"] = json!("");
         Ok(data)

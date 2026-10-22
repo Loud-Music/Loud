@@ -5,7 +5,7 @@ import {
   type EqualizerSettings,
   type EqualizerGraph,
 } from "./equalizer";
-import Hls from "hls.js";
+import type Hls from "hls.js";
 import {
   cachePlayingStream,
   needsAudioResolution,
@@ -130,7 +130,9 @@ export default function usePlayback(
     eqGraph.current?.configure(equalizer);
     if (!exclusive && (playing || equalizer.enabled))
       void eqGraph.current?.context.resume().catch((error) =>
-        playbackLog("audio-context-resume-failed", activeTrack.current, { error }),
+        playbackLog("audio-context-resume-failed", activeTrack.current, {
+          error,
+        }),
       );
   }, [equalizer, exclusive, playing, notify, setEqualizer]);
   useEffect(() => {
@@ -243,7 +245,7 @@ export default function usePlayback(
 
   useEffect(() => {
     if (!gaplessSession.current) return;
-    let frame = 0;
+    let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
       const session = gaplessSession.current;
       const segment = session?.active();
@@ -262,10 +264,10 @@ export default function usePlayback(
         ended.current();
       }
       session?.finishIfNeeded();
-      frame = requestAnimationFrame(tick);
+      timer = setTimeout(tick, audio.current?.paused ? 250 : 50);
     };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    tick();
+    return () => clearTimeout(timer);
   }, [gaplessEpoch, ended]);
   useEffect(() => {
     const offline = () => {
@@ -470,19 +472,24 @@ export default function usePlayback(
           if (desiredPlaying.current)
             stallTimer.current = setTimeout(() => recover.current?.(), 8000);
           if (await startGapless(resolved, token, ready)) return resolved;
-          if (resolved.streamType === "hls" && Hls.isSupported()) {
-            const player = new Hls({
+          const HlsPlayer =
+            resolved.streamType === "hls"
+              ? (await import("hls.js")).default
+              : undefined;
+          if (token !== generation.current) return resolved;
+          if (HlsPlayer?.isSupported()) {
+            const player = new HlsPlayer({
               enableWorker: true,
               maxBufferLength: 20,
               maxMaxBufferLength: 30,
               backBufferLength: 15,
             });
             hls.current = player;
-            player.on(Hls.Events.MANIFEST_PARSED, () => {
+            player.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
               ready();
               if (!desiredPlaying.current) player.stopLoad();
             });
-            player.on(Hls.Events.ERROR, (_, error) => {
+            player.on(HlsPlayer.Events.ERROR, (_, error) => {
               if (error.fatal && token === generation.current)
                 recover.current?.();
             });
@@ -643,7 +650,7 @@ export default function usePlayback(
         busy = false;
       }
     };
-    const timer = window.setInterval(() => void poll(), 80);
+    const timer = window.setInterval(() => void poll(), 250);
     void poll();
     return () => {
       active = false;
@@ -774,7 +781,9 @@ export default function usePlayback(
     onPlaying: () => {
       if (eqGraph.current?.context.state === "suspended")
         void eqGraph.current.context.resume().catch((error) =>
-          playbackLog("audio-context-resume-failed", activeTrack.current, { error }),
+          playbackLog("audio-context-resume-failed", activeTrack.current, {
+            error,
+          }),
         );
       playbackLog("audio-playing", activeTrack.current, {
         route: eqGraph.current ? "web-audio" : "media-element",

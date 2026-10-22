@@ -75,6 +75,7 @@ jobs:
             ~/.cargo/git
             src-tauri/target
           key: linux-release-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: linux-release-
       - name: Install system libraries
         timeout-minutes: 8
         run: |

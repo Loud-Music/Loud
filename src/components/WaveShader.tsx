@@ -32,6 +32,7 @@ export default function WaveShader({
   const palette = useRef<CoverPalette>(
     neutralPalette.map((color) => [...color]) as CoverPalette,
   );
+  const redraw = useRef<() => void>(() => {});
   const [generation, setGeneration] = useState(0);
   const [fallback, setFallback] = useState(false);
   const [fallbackColors, setFallbackColors] = useState(neutralPalette);
@@ -56,6 +57,8 @@ export default function WaveShader({
       active = false;
     };
   }, [cover]);
+
+  useEffect(() => redraw.current(), [playing, exclusive, fallbackColors]);
 
   useEffect(() => {
     const element = canvas.current;
@@ -132,6 +135,7 @@ export default function WaveShader({
     const motion = matchMedia("(prefers-reduced-motion: reduce)");
     const samples = new Float32Array(4096);
     const frequencies = new Float32Array(2048);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     let frame = 0,
       last = 0,
       clock = 0,
@@ -146,30 +150,34 @@ export default function WaveShader({
       const { width, height } = entries[0].contentRect;
       const scale = Math.min(
         devicePixelRatio || 1,
-        1.25,
-        1440 / Math.max(1, width),
+        1,
+        960 / Math.max(1, width),
+        Math.sqrt(320000 / Math.max(1, width * height)),
       );
-      element.width = Math.max(1, Math.round(width * scale));
-      element.height = Math.max(1, Math.round(height * scale));
+      const nextWidth = Math.max(1, Math.round(width * scale));
+      const nextHeight = Math.max(1, Math.round(height * scale));
+      if (element.width === nextWidth && element.height === nextHeight) return;
+      element.width = nextWidth;
+      element.height = nextHeight;
       gl.viewport(0, 0, element.width, element.height);
+      wake();
     });
     resize.observe(element);
     const draw = (now: number) => {
       frame = 0;
       if (lost || document.hidden || !visible) return;
-      frame = requestAnimationFrame(draw);
-      if (now - last < (motion.matches ? 100 : 1000 / 45)) return;
-      const dt = Math.min((now - (last || now)) / 1000, 0.1);
+      const dt = Math.min(last ? (now - last) / 1000 : 1 / 30, 0.1);
       last = now;
       let target = 0,
         low = 0;
       const state = signal.current;
       const analyser = audioGraph.current?.analyser;
-      if (state.playing && state.exclusive) {
+      if (state.playing && !motion.matches && state.exclusive) {
         target = Math.min(1, Math.sqrt(state.nativeLevel) * 1.6);
         low = Math.min(1, state.nativeBass * 6);
       } else if (
         state.playing &&
+        !motion.matches &&
         analyser &&
         audioGraph.current?.context.state === "running"
       ) {
@@ -198,14 +206,23 @@ export default function WaveShader({
         Math.max(0, low - averageBass * 1.1 - 0.06) * 0.6;
       pulse = Math.max(pulse * Math.exp(-dt / 0.22), Math.min(1, onset));
       previousBass = low;
-      if (!motion.matches)
+      if (state.playing && !motion.matches)
         clock += dt * (0.7 + energy * 0.6 + bass * 1.25 + pulse * 0.6);
+      let transitioning = energy > 0.003 || bass > 0.003 || pulse > 0.003;
       for (let color = 0; color < 3; color++) {
-        for (let channel = 0; channel < 3; channel++)
+        for (let channel = 0; channel < 3; channel++) {
+          if (
+            Math.abs(
+              targetPalette.current[color][channel] -
+                palette.current[color][channel],
+            ) > 0.003
+          )
+            transitioning = true;
           palette.current[color][channel] +=
             (targetPalette.current[color][channel] -
               palette.current[color][channel]) *
             (1 - Math.exp(-dt / 0.8));
+        }
         gl.uniform3fv(uniforms.palette[color], palette.current[color]);
       }
       gl.uniform2f(uniforms.resolution, element.width, element.height);
@@ -214,13 +231,31 @@ export default function WaveShader({
       gl.uniform1f(uniforms.bass, bass);
       gl.uniform1f(uniforms.pulse, motion.matches ? 0 : pulse);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+      if ((state.playing && !motion.matches) || transitioning) {
+        timer = setTimeout(
+          () => {
+            timer = undefined;
+            if (!lost && !document.hidden && visible)
+              frame = requestAnimationFrame(draw);
+          },
+          Math.max(0, 1000 / 30 - (performance.now() - now) - 4),
+        );
+      }
     };
     const wake = () => {
-      if (!frame && !lost && !document.hidden && visible) {
+      if (lost || document.hidden || !visible) {
+        clearTimeout(timer);
+        timer = undefined;
+        cancelAnimationFrame(frame);
+        frame = 0;
+        return;
+      }
+      if (!frame && !timer) {
         last = 0;
         frame = requestAnimationFrame(draw);
       }
     };
+    redraw.current = wake;
     const intersection = new IntersectionObserver((entries) => {
       visible = entries[0].isIntersecting;
       wake();
@@ -229,6 +264,8 @@ export default function WaveShader({
     const onLost = (event: Event) => {
       event.preventDefault();
       lost = true;
+      clearTimeout(timer);
+      timer = undefined;
       cancelAnimationFrame(frame);
       frame = 0;
       setFallback(true);
@@ -237,14 +274,18 @@ export default function WaveShader({
     element.addEventListener("webglcontextlost", onLost);
     element.addEventListener("webglcontextrestored", onRestored);
     document.addEventListener("visibilitychange", wake);
+    motion.addEventListener("change", wake);
     wake();
     return () => {
+      redraw.current = () => {};
+      clearTimeout(timer);
       cancelAnimationFrame(frame);
       resize.disconnect();
       intersection.disconnect();
       element.removeEventListener("webglcontextlost", onLost);
       element.removeEventListener("webglcontextrestored", onRestored);
       document.removeEventListener("visibilitychange", wake);
+      motion.removeEventListener("change", wake);
       dispose();
     };
   }, [audioGraph, generation]);

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { initializePersistence, flushPersistence } from "./lib/persistence";
+import "./theme.css";
 import "./styles.css";
 import "./artist.css";
 import "./layout.css";

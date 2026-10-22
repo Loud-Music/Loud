@@ -43,7 +43,13 @@ export default function Dialog({
         }}
       >
         <div className="dialog-top">
-          <span className="eyebrow">Loud</span>
+          <img
+            className="dialog-wordmark"
+            src="/loud-logo.svg"
+            alt="LOUD"
+            width={84}
+            height={26}
+          />
           <IconButton
             icon={X}
             label="Закрыть окно"

@@ -1,0 +1,80 @@
+@font-face {
+  font-family: "Google Sans Flex";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-stretch: 25% 151%;
+  font-display: swap;
+  src: url("@fontsource-variable/google-sans-flex/files/google-sans-flex-latin-full-normal.woff2")
+    format("woff2-variations");
+}
+:root {
+  color-scheme: dark;
+  font-family:
+    "Google Sans Flex",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-optical-sizing: auto;
+  font-variation-settings:
+    "ROND" 0,
+    "GRAD" 0;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --bg: #101011;
+  --surface: #1b1b1e;
+  --sidebar: #0d0d0f;
+  --text: #f3f3f5;
+  --muted: #a0a0a8;
+  --subtle: #b3b3bb;
+  --line: #ffffff12;
+  --accent: #ff4059;
+  --accent-soft: #42232a;
+  --hover: #232326;
+  --player: #1a181a;
+  --selection: #ffffff0e;
+  --now: #242427;
+  --shadow: 0 16px 60px #0005;
+  --control: #202023;
+  --control-border: #ffffff1a;
+  --row-line: #ffffff08;
+  --border: var(--line);
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --range-fill: #a1a1a8;
+  --range-track: #525257;
+  --material-blur: 18px;
+  --material-sidebar: rgba(13, 13, 15, 0.86);
+  --material-main: rgba(15, 15, 17, 0.94);
+  --material-player: rgba(27, 23, 25, 0.9);
+  --material-shell: rgba(14, 14, 19, 0.18);
+  --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #fff;
+  --surface: #fff;
+  --sidebar: #f3f3f5;
+  --text: #252526;
+  --line: #e5e5e7;
+  --accent: #fa243c;
+  --accent-soft: #fbe9ec;
+  --hover: #f5f5f7;
+  --player: #fafafa;
+  --selection: #e3e3e8;
+  --now: #ededf0;
+  --muted: #6c6c73;
+  --subtle: #57575e;
+  --control: #f0f0f3;
+  --control-border: #0000001a;
+  --row-line: #0000000a;
+  --range-fill: #8a8a8f;
+  --range-track: #d6d6db;
+  --material-sidebar: rgba(239, 239, 247, 0.8);
+  --material-main: rgba(253, 253, 255, 0.92);
+  --material-player: rgba(250, 250, 255, 0.9);
+  --shadow: 0 16px 60px #0002;
+}

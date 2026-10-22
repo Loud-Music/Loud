@@ -29,3 +29,5 @@ design/
 **/*banner*.jpg
 **/*banner*.webp
 mockups/
+
+!docs/assets/readme-banner.svg

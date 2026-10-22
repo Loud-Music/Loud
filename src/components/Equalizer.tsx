@@ -15,7 +15,6 @@ export default function Equalizer({
       <div className="eq-heading">
         <div>
           <h3>Эквалайзер</h3>
-          <p>Твой звук. В деталях.</p>
         </div>
         <button
           type="button"

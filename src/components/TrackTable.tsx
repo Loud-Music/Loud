@@ -1,3 +1,4 @@
+import { memo, useMemo } from "react";
 import { AudioLines, Clock3, Play, Heart, Ellipsis } from "lucide-react";
 import type { Track } from "../lib/library";
 import { time } from "../lib/library";
@@ -16,7 +17,7 @@ type Props = {
   toggleFavorite: (id: string) => void;
   setSelected: (track: Track) => void;
 };
-export default function TrackTable({
+export default memo(function TrackTable({
   list,
   compact = false,
   currentId,
@@ -27,6 +28,7 @@ export default function TrackTable({
   toggleFavorite,
   setSelected,
 }: Props) {
+  const favoriteIds = useMemo(() => new Set(favorites), [favorites]);
   return (
     <div className={`track-table ${compact ? "compact" : ""}`}>
       <div className="track-table-head">
@@ -71,7 +73,7 @@ export default function TrackTable({
             )}
           </button>
           <div className="track-info">
-            <img src={track.cover} alt="" />
+            <img src={track.cover} alt="" loading="lazy" decoding="async" />
             <span>
               <strong>
                 <button
@@ -109,8 +111,8 @@ export default function TrackTable({
           <div className="row-actions">
             <IconButton
               icon={Heart}
-              label={`${favorites.includes(track.id) ? "Убрать из избранного" : "В избранное"} ${track.title}`}
-              active={favorites.includes(track.id)}
+              label={`${favoriteIds.has(track.id) ? "Убрать из избранного" : "В избранное"} ${track.title}`}
+              active={favoriteIds.has(track.id)}
               className="favorite-button"
               onClick={() => toggleFavorite(track.id)}
             />
@@ -124,4 +126,4 @@ export default function TrackTable({
       ))}
     </div>
   );
-}
+});
