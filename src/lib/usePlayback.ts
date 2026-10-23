@@ -52,6 +52,15 @@ export const exclusiveAvailable = () =>
   isDesktop() && /Windows/i.test(navigator.userAgent);
 const analysePlayback = () =>
   !isDesktop() || !/Linux/i.test(navigator.userAgent);
+const cancelledPlay = (error: unknown) =>
+  (error instanceof Error || error instanceof DOMException) &&
+  error.name === "AbortError";
+const mediaPlaying = (element: HTMLAudioElement | null) =>
+  !!element &&
+  !element.paused &&
+  !element.ended &&
+  !element.error &&
+  element.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
 export default function usePlayback(
   track: Track,
   notify: (message: string) => void,
@@ -146,7 +155,16 @@ export default function usePlayback(
   const [output, setOutput] = useState<OutputStatus>(idle);
   const [preparing, setPreparing] = useState(false);
   const [buffering, setBuffering] = useState(false);
+  const [error, setError] = useState("");
   const generation = useRef(0);
+  const isCurrent = useCallback(
+    (token: number, song: Track) =>
+      token === generation.current &&
+      activeTrack.current.id === song.id &&
+      activeTrack.current.src === song.src,
+    [],
+  );
+  const dismissError = useCallback(() => setError(""), []);
   const desiredPlaying = useRef(playing);
   desiredPlaying.current = playing;
   const loadingAudio = useRef<Promise<Track> | undefined>(undefined);
@@ -302,6 +320,7 @@ export default function usePlayback(
       key.current = "";
       finished.current = false;
       setPreparing(true);
+      setError("");
       setOutput({ ...idle, phase: "loading" });
       audio.current?.pause();
       await invoke("exclusive_control", { action: "stop" }).catch(() => {});
@@ -318,19 +337,19 @@ export default function usePlayback(
         key.current = prepared;
         if (token === generation.current) setPlaying(true);
       } catch (error) {
-        if (token === generation.current) {
+        if (isCurrent(token, song)) {
           const message = String(
             error instanceof Error ? error.message : error,
           );
           setPlaying(false);
           setOutput({ ...idle, phase: "error", error: message });
-          notify(message);
+          setError(message);
         }
       } finally {
         if (token === generation.current) setPreparing(false);
       }
     },
-    [notify],
+    [isCurrent],
   );
   useEffect(() => {
     saveSetting("volume", volume);
@@ -339,6 +358,7 @@ export default function usePlayback(
   useEffect(() => {
     const el = audio.current;
     if (!el) return;
+    setError("");
     const adopted = gaplessSession.current?.active();
     if (adoptedGapless.current === track.id && adopted?.track.id === track.id) {
       adoptedGapless.current = "";
@@ -397,9 +417,15 @@ export default function usePlayback(
       let selected = "",
         attempts = 0,
         switching = false;
+      let sourceAttempt = 0;
+      let removeReady = () => {};
       let resumePosition = 0;
       const load = async (): Promise<Track> => {
         if (switching) throw new Error("Stream is already switching");
+        const request = ++sourceAttempt;
+        const current = () =>
+          isCurrent(token, track) && request === sourceAttempt;
+        removeReady();
         switching = true;
         setPreparing(true);
         clearTimeout(stallTimer.current);
@@ -410,7 +436,7 @@ export default function usePlayback(
             failed,
             (candidate) => {
               if (
-                token !== generation.current ||
+                !current() ||
                 candidate.streamType ||
                 !candidate.src ||
                 candidate.format === "FLAC" ||
@@ -424,12 +450,12 @@ export default function usePlayback(
               }
             },
           );
-          if (token !== generation.current) return resolved;
+          if (!current()) return resolved;
           if (isDesktop())
             void invoke("audio_cache_pin", {
               key: resolved.nativeKey || resolved.streamCacheKey || null,
             }).catch(() => {});
-          if (token !== generation.current) return resolved;
+          if (!current()) return resolved;
           selected =
             resolved.playbackSource ||
             resolved.extractorUrl ||
@@ -445,7 +471,7 @@ export default function usePlayback(
           hls.current?.destroy();
           hls.current = undefined;
           const ready = () => {
-            if (token !== generation.current) return;
+            if (!current()) return;
             if (
               !gaplessSession.current &&
               Number.isFinite(el.duration) &&
@@ -464,19 +490,23 @@ export default function usePlayback(
               void el
                 .play()
                 .then(() => {
-                  if (token === generation.current)
-                    cachePlayingStream(track, resolved);
+                  if (current()) cachePlayingStream(track, resolved);
                 })
-                .catch(() => recover.current?.());
+                .catch((error) => {
+                  if (current() && !cancelledPlay(error) && !mediaPlaying(el))
+                    recover.current?.();
+                });
           };
           if (desiredPlaying.current)
-            stallTimer.current = setTimeout(() => recover.current?.(), 8000);
+            stallTimer.current = setTimeout(() => {
+              if (current()) recover.current?.();
+            }, 8000);
           if (await startGapless(resolved, token, ready)) return resolved;
           const HlsPlayer =
             resolved.streamType === "hls"
               ? (await import("hls.js")).default
               : undefined;
-          if (token !== generation.current) return resolved;
+          if (!current()) return resolved;
           if (HlsPlayer?.isSupported()) {
             const player = new HlsPlayer({
               enableWorker: true,
@@ -490,7 +520,7 @@ export default function usePlayback(
               if (!desiredPlaying.current) player.stopLoad();
             });
             player.on(HlsPlayer.Events.ERROR, (_, error) => {
-              if (error.fatal && token === generation.current)
+              if (error.fatal && current() && hls.current === player)
                 recover.current?.();
             });
             player.loadSource(resolved.src!);
@@ -500,6 +530,8 @@ export default function usePlayback(
             if (prepared && el.readyState >= 1) ready();
             else {
               el.addEventListener("loadedmetadata", ready, { once: true });
+              removeReady = () =>
+                el.removeEventListener("loadedmetadata", ready);
               if (!prepared) {
                 el.src = resolved.src!;
                 el.load();
@@ -508,11 +540,16 @@ export default function usePlayback(
           }
           return resolved;
         } finally {
-          switching = false;
+          if (current()) switching = false;
         }
       };
       const fail = (error: unknown) => {
-        if (token !== generation.current) return;
+        if (
+          !isCurrent(token, track) ||
+          cancelledPlay(error) ||
+          mediaPlaying(el)
+        )
+          return;
         if (navigator.onLine === false) {
           networkWaiting.current = true;
           setPreparing(false);
@@ -524,7 +561,7 @@ export default function usePlayback(
         setPreparing(false);
         setBuffering(false);
         setPlaying(false);
-        notify(String(error instanceof Error ? error.message : error));
+        setError(String(error instanceof Error ? error.message : error));
       };
       recover.current = () => {
         if (token !== generation.current || switching) return;
@@ -566,7 +603,10 @@ export default function usePlayback(
       const pending = load();
       loadingAudio.current = pending;
       void pending.catch(fail);
-      return;
+      return () => {
+        removeReady();
+        sourceAttempt++;
+      };
     }
     if (exclusive) {
       el.removeAttribute("src");
@@ -602,21 +642,28 @@ export default function usePlayback(
         el.src = track.src || "";
         el.load();
         if (desiredPlaying.current && track.src) await el.play();
-      })().catch(() => {
+      })().catch((error) => {
+        if (
+          !isCurrent(token, track) ||
+          cancelledPlay(error) ||
+          mediaPlaying(el)
+        )
+          return;
         setBuffering(false);
         setPlaying(false);
-        notify(
+        setError(
           "Не удалось воспроизвести аудио. Проверьте подключение или выберите другой файл.",
         );
       });
     }
-  }, [track.id, track.src, exclusive]);
+  }, [track.id, track.src, exclusive, isCurrent]);
   useEffect(() => {
     if (!exclusive) return;
     let active = true,
       busy = false;
     const poll = async () => {
       if (busy || !key.current) return;
+      const token = generation.current;
       busy = true;
       try {
         const status = await invoke<OutputStatus>("exclusive_status");
@@ -629,20 +676,23 @@ export default function usePlayback(
         setOutput(status);
         setProgress(status.position);
         if (status.duration) setDuration(status.duration);
-        if (status.phase === "playing") setPlaying(true);
+        if (status.phase === "playing") {
+          setPlaying(true);
+          setError("");
+        }
         if (["paused", "error", "idle", "ended"].includes(status.phase))
           setPlaying(false);
         if (status.phase === "error" && !finished.current) {
           finished.current = true;
-          notify(status.error || "Ошибка эксклюзивного вывода звука.");
+          setError(status.error || "Ошибка эксклюзивного вывода звука.");
         }
         if (status.phase === "ended" && !finished.current) {
           finished.current = true;
           ended.current();
         }
       } catch (error) {
-        if (active) {
-          notify(String(error));
+        if (active && token === generation.current) {
+          setError(String(error));
           setPlaying(false);
           key.current = "";
         }
@@ -670,23 +720,35 @@ export default function usePlayback(
     [],
   );
   const play = useCallback(async () => {
+    const token = generation.current;
+    if (!isCurrent(token, track)) return;
+    setError("");
     if (eqGraph.current?.context.state === "suspended")
       await eqGraph.current.context.resume();
+    if (!isCurrent(token, track)) return;
     if (track.preview) {
       notify("Доступен только отрывок. Добавьте полный аудиофайл этой песни.");
       return;
     }
     if (needsAudioResolution(track) && loadingAudio.current) {
-      const token = generation.current;
+      const pending = loadingAudio.current;
       try {
-        await loadingAudio.current;
+        await pending;
+        if (!isCurrent(token, track) || loadingAudio.current !== pending)
+          return;
         hls.current?.startLoad(-1);
-        if (token !== generation.current) return;
         await audio.current?.play();
-        setPlaying(true);
+        if (isCurrent(token, track)) setPlaying(true);
       } catch (error) {
+        if (
+          !isCurrent(token, track) ||
+          loadingAudio.current !== pending ||
+          cancelledPlay(error) ||
+          mediaPlaying(audio.current)
+        )
+          return;
         setPlaying(false);
-        notify(String(error));
+        setError(String(error instanceof Error ? error.message : error));
       }
       return;
     }
@@ -700,14 +762,20 @@ export default function usePlayback(
     if (!audio.current || !track.src) return;
     try {
       await audio.current.play();
-      setPlaying(true);
-    } catch {
+      if (isCurrent(token, track)) setPlaying(true);
+    } catch (error) {
+      if (
+        !isCurrent(token, track) ||
+        cancelledPlay(error) ||
+        mediaPlaying(audio.current)
+      )
+        return;
       setPlaying(false);
-      notify(
+      setError(
         "Не удалось начать воспроизведение. Проверьте подключение и формат аудио.",
       );
     }
-  }, [exclusive, output.phase, track, startNative, notify]);
+  }, [exclusive, output.phase, track, startNative, notify, isCurrent]);
   const pause = useCallback(async () => {
     networkWaiting.current = false;
     setBuffering(false);
@@ -743,10 +811,18 @@ export default function usePlayback(
     [exclusive, notify],
   );
   const togglePlay = useCallback(() => {
+    const token = generation.current;
     void (
       playing || (preparing && desiredPlaying.current) ? pause() : play()
-    ).catch((error) => notify(String(error)));
-  }, [playing, preparing, pause, play, notify]);
+    ).catch((error) => {
+      if (
+        isCurrent(token, track) &&
+        !cancelledPlay(error) &&
+        !mediaPlaying(audio.current)
+      )
+        setError(String(error instanceof Error ? error.message : error));
+    });
+  }, [playing, preparing, pause, play, track, isCurrent]);
   const setExclusive = useCallback((value: boolean) => {
     ++generation.current;
     key.current = "";
@@ -779,6 +855,8 @@ export default function usePlayback(
       }
     },
     onPlaying: () => {
+      if (!mediaPlaying(audio.current)) return;
+      setError("");
       if (eqGraph.current?.context.state === "suspended")
         void eqGraph.current.context.resume().catch((error) =>
           playbackLog("audio-context-resume-failed", activeTrack.current, {
@@ -840,6 +918,7 @@ export default function usePlayback(
       }
     },
     onError: () => {
+      if (!audio.current?.error || mediaPlaying(audio.current)) return;
       playbackLog("audio-element-error", activeTrack.current, {
         code: audio.current?.error?.code,
         error: audio.current?.error?.message,
@@ -859,7 +938,7 @@ export default function usePlayback(
       setBuffering(false);
       if (!exclusive && audio.current?.getAttribute("src")) {
         setPlaying(false);
-        notify(
+        setError(
           "Не удалось загрузить аудио. Проверьте подключение или попробуйте другой формат.",
         );
       }
@@ -885,6 +964,8 @@ export default function usePlayback(
     setEqualizer,
     setExclusive,
     output,
+    error,
+    dismissError,
     loading: preparing || buffering || output.phase === "loading",
     play,
     pause,

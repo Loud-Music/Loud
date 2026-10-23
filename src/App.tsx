@@ -185,6 +185,8 @@ export default function App({
     timelineOffset,
     setEqualizer,
     output,
+    error: playbackError,
+    dismissError: dismissPlaybackError,
     loading: audioLoading,
     play,
     pause,
@@ -1568,19 +1570,23 @@ export default function App({
           !modal &&
           !selected &&
           !toast &&
+          !playbackError &&
           !audioLoading &&
           !dragging &&
           !lyricsOpen &&
           !queueOpen
         }
       />
-      {toast && (
+      {(toast || playbackError) && (
         <div className="toast" role="status">
-          <span>{toast}</span>
+          <span>{toast || playbackError}</span>
           <IconButton
             icon={X}
             label="Закрыть уведомление"
-            onClick={() => setToast("")}
+            onClick={() => {
+              setToast("");
+              dismissPlaybackError();
+            }}
           />
         </div>
       )}
