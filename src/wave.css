@@ -48,6 +48,9 @@
 .wave-shader-fallback canvas {
   opacity: 0;
 }
+.wave-shader-disabled {
+  background: var(--surface);
+}
 .wave-hero-center {
   display: flex;
   flex-direction: column;

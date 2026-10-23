@@ -217,6 +217,8 @@ h1 {
 }
 .album-card {
   min-width: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 285px;
 }
 .cover-wrap {
   position: relative;
@@ -2334,4 +2336,26 @@ input[type="radio"] {
 .modal-backdrop.animate-modal,
 .modal-backdrop.animate-modal > * {
   animation: none;
+}
+
+html[data-performance="potato"] *,
+html[data-performance="potato"] *::before,
+html[data-performance="potato"] *::after {
+  animation: none !important;
+  transition: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  mask-image: none !important;
+  -webkit-mask-image: none !important;
+  scroll-behavior: auto !important;
+}
+
+html[data-performance="potato"] .wave-shader {
+  display: none;
+}
+
+html[data-performance="potato"] .player::before {
+  display: none;
 }

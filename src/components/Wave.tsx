@@ -19,6 +19,7 @@ import { genreLabel, tasteGenres } from "../lib/recommendations";
 import type { TasteProfile } from "../lib/recommendations";
 import type { Track } from "../lib/library";
 export default function Wave({
+  potato,
   profile,
   onChange,
   onStart,
@@ -38,6 +39,7 @@ export default function Wave({
   nativeLevel,
   nativeBass,
 }: {
+  potato: boolean;
   profile: TasteProfile;
   onChange: (patch: Partial<TasteProfile>) => void;
   onStart: () => void;
@@ -62,6 +64,7 @@ export default function Wave({
     <Collapsible.Root asChild open={settings} onOpenChange={setSettings}>
       <section className="wave-view">
         <WaveShader
+          enabled={!potato}
           audioGraph={audioGraph}
           playing={playing}
           exclusive={exclusive}

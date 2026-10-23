@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { readSetting, saveSetting, trackArtists, type Track } from "./library";
+import { getPlaybackProgress } from "./playbackProgress";
 type DiscordConfig = { enabled: boolean; applicationId: string };
 const builtIn =
   import.meta.env.VITE_DISCORD_APPLICATION_ID || "1561804997149196409";
@@ -42,12 +43,11 @@ function presenceActivity(
 export function useDiscordPresence(
   track: Track,
   playing: boolean,
-  position: number,
   duration: number,
 ) {
   const [config, setConfig] = useState(discordConfig);
-  const latest = useRef({ track, playing, position, duration });
-  latest.current = { track, playing, position, duration };
+  const latest = useRef({ track, playing, duration });
+  latest.current = { track, playing, duration };
   useEffect(() => {
     const refresh = () => setConfig(discordConfig());
     window.addEventListener("loud-discord-config", refresh);
@@ -66,7 +66,7 @@ export function useDiscordPresence(
               ? presenceActivity(
                   value.track,
                   value.playing,
-                  value.position,
+                  getPlaybackProgress(),
                   value.duration,
                 )
               : null,

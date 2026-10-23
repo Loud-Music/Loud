@@ -15,6 +15,7 @@ import { loadLyrics, loadKaraoke, parseLyrics } from "../lib/lyrics";
 import { clearCatalogCache } from "../lib/catalogRequest";
 import { clearLyricsCache, readyLyrics } from "../lib/lyricsCache";
 import type { LyricLine, Lyrics } from "../lib/lyrics";
+import { usePlaybackProgress } from "../lib/playbackProgress";
 
 const LyricRow = memo(function LyricRow({
   line,
@@ -92,7 +93,6 @@ const LyricRow = memo(function LyricRow({
 
 export default function LyricsPanel({
   track,
-  progress,
   timelineOffset = 0,
   audio,
   playing,
@@ -100,13 +100,13 @@ export default function LyricsPanel({
   close,
 }: {
   track: Track;
-  progress: number;
   timelineOffset?: number;
   audio?: RefObject<HTMLAudioElement | null>;
   playing: boolean;
   seek: (time: number) => void;
   close: () => void;
 }) {
+  const progress = usePlaybackProgress();
   const [result, setResult] = useState<Lyrics | undefined>(() =>
     readyLyrics(track),
   );
