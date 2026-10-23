@@ -220,6 +220,14 @@
 .prefs-button:hover {
   background: var(--selection);
 }
+.prefs-mode-options {
+  display: flex;
+  gap: 5px;
+}
+.prefs-mode-options .prefs-button.is-selected {
+  background: var(--selection);
+  border-color: var(--accent);
+}
 .prefs-button:disabled,
 .prefs-switch:disabled {
   opacity: 0.4;

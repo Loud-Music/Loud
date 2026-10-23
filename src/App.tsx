@@ -71,6 +71,7 @@ import type { View } from "./lib/navigation";
 import { viewLabel, artistRoute, parseArtistRoute } from "./lib/navigation";
 import { mergeSearch } from "./lib/search";
 import { useDiscordPresence } from "./lib/useDiscordPresence";
+import { getPlaybackProgress } from "./lib/playbackProgress";
 import usePlayback from "./lib/usePlayback";
 import useFavorites from "./lib/useFavorites";
 import useWave from "./lib/useWave";
@@ -131,6 +132,9 @@ export default function App({
   const [theme, setTheme] = useState<string>(() =>
     readSetting("theme:v2", "dark"),
   );
+  const [performanceMode, setPerformanceMode] = useState<"normal" | "potato">(
+    () => readSetting("performanceMode:v1", "normal"),
+  );
   const [dragging, setDragging] = useState(false);
   const onEnded = useRef<() => void>(() => {});
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -139,21 +143,27 @@ export default function App({
   const searchInput = useRef<HTMLInputElement>(null);
   const linkTarget = useRef<Track | null>(null);
   const dragDepth = useRef(0);
-  const current = tracks.find((t) => t.id === currentId) || idleTrack;
+  const trackIndex = useMemo(() => {
+    const byId = new Map<string, Track>();
+    const playableIds = new Set<string>();
+    const sourceIds = new Set<string>();
+    for (const track of tracks) {
+      byId.set(track.id, track);
+      if (track.src || track.extractorUrl) playableIds.add(track.id);
+      if (track.src) sourceIds.add(track.id);
+    }
+    return { byId, playableIds, sourceIds };
+  }, [tracks]);
+  const current = trackIndex.byId.get(currentId) || idleTrack;
   const gaplessQueue = useMemo(() => {
-    const playable = new Set(
-      tracks
-        .filter((track) => track.src || track.extractorUrl)
-        .map((track) => track.id),
-    );
-    return queue.filter((id) => playable.has(id));
-  }, [queue, tracks]);
+    return queue.filter((id) => trackIndex.playableIds.has(id));
+  }, [queue, trackIndex]);
   const gaplessIndex = gaplessQueue.indexOf(currentId);
   const gaplessNextId = shuffle
     ? undefined
     : gaplessQueue[gaplessIndex + 1] ||
       (repeat && gaplessQueue.length > 1 ? gaplessQueue[0] : undefined);
-  const gaplessNext = tracks.find((track) => track.id === gaplessNextId);
+  const gaplessNext = trackIndex.byId.get(gaplessNextId || "");
   useEffect(() => {
     if (!current.id) return;
     void loadKaraoke(current).catch(() => {});
@@ -175,7 +185,6 @@ export default function App({
     playbackFormat,
     playing,
     setPlaying,
-    progress,
     duration,
     volume,
     setVolume,
@@ -196,7 +205,7 @@ export default function App({
     seek,
     togglePlay,
   } = usePlayback(current, notify, onEnded, gaplessNext);
-  useDiscordPresence(current, playing, progress, duration);
+  useDiscordPresence(current, playing, duration);
   const deferredOffline = useRef(new Map<string, Track>());
   const receiveOffline = useCallback(
     (saved: Track) => {
@@ -291,6 +300,10 @@ export default function App({
         });
   }, [theme]);
   useEffect(() => {
+    document.documentElement.dataset.performance = performanceMode;
+    saveSetting("performanceMode:v1", performanceMode);
+  }, [performanceMode]);
+  useEffect(() => {
     if (!toast) return;
     const id = setTimeout(() => setToast(""), 6000);
     return () => clearTimeout(id);
@@ -347,11 +360,9 @@ export default function App({
         waveActive
       )
         wave.feedback(current, "skip");
-      const available = queue.filter((id) =>
-        tracks.some((t) => t.id === id && t.src),
-      );
+      const available = queue.filter((id) => trackIndex.sourceIds.has(id));
       if (!available.length) return;
-      if (direction < 0 && progress > 3) {
+      if (direction < 0 && getPlaybackProgress() > 3) {
         seek(0);
         return;
       }
@@ -370,11 +381,10 @@ export default function App({
     },
     [
       queue,
-      tracks,
+      trackIndex,
       currentId,
       shuffle,
       playing,
-      progress,
       seek,
       play,
       waveActive,
@@ -793,7 +803,7 @@ export default function App({
   const visible = useMemo(() => {
     let items = playlist
       ? playlist.tracks
-          .map((id) => tracks.find((t) => t.id === id))
+          .map((id) => trackIndex.byId.get(id))
           .filter((t): t is Track => !!t)
       : view === "Favorites"
         ? tracks.filter((t) => favorites.includes(t.id))
@@ -814,7 +824,7 @@ export default function App({
           .includes(search.toLowerCase()),
     );
     return view === "Favorites" || playlist ? items : mergeSearch(items, "");
-  }, [playlist, tracks, view, favorites, libraryTracks, search]);
+  }, [playlist, tracks, trackIndex, view, favorites, libraryTracks, search]);
   const albums = useMemo(
     () => [...new Map(visible.map((t) => [t.album, t])).values()],
     [visible],
@@ -1066,6 +1076,7 @@ export default function App({
             ))}
           {view === "Моя волна" && (
             <Wave
+              potato={performanceMode === "potato"}
               audioGraph={audioGraph}
               exclusive={exclusive}
               nativeLevel={output.level ?? 0}
@@ -1381,7 +1392,6 @@ export default function App({
             timelineOffset={timelineOffset}
             track={current}
             playing={playing}
-            progress={progress}
             audio={exclusive ? undefined : audio}
             seek={seek}
             close={() => setLyricsOpen(false)}
@@ -1393,7 +1403,6 @@ export default function App({
         playing={playing}
         current={current}
         favorites={favorites}
-        progress={progress}
         duration={duration}
         seek={seek}
         shuffle={shuffle}
@@ -1473,6 +1482,8 @@ export default function App({
             onEqualizer={setEqualizer}
             theme={theme}
             onTheme={setTheme}
+            performanceMode={performanceMode}
+            onPerformanceMode={setPerformanceMode}
             preferExclusive={preferExclusive}
             onExclusive={setExclusive}
             exclusive={exclusive}

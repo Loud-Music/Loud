@@ -81,6 +81,8 @@ function Row({
 export default function SettingsDialog({
   theme,
   onTheme,
+  performanceMode,
+  onPerformanceMode,
   initialSection = "general",
   equalizer,
   gapless,
@@ -106,6 +108,8 @@ export default function SettingsDialog({
   onEqualizer: (value: EqualizerSettings) => void;
   theme: string;
   onTheme: (theme: string) => void;
+  performanceMode: "normal" | "potato";
+  onPerformanceMode: (mode: "normal" | "potato") => void;
   preferExclusive: boolean;
   onExclusive: (value: boolean) => void;
   exclusive: boolean;
@@ -237,6 +241,33 @@ export default function SettingsDialog({
                         </Button>
                       ))}
                     </div>
+                  </Group>
+                  <Group title="Производительность">
+                    <Row
+                      title="Эффекты интерфейса"
+                      description="Potato отключает анимированный фон и визуальные эффекты, чтобы снизить нагрузку на видеокарту и процессор."
+                    >
+                      <div
+                        className="prefs-mode-options"
+                        role="group"
+                        aria-label="Режим производительности"
+                      >
+                        <Button
+                          className={`prefs-button ${performanceMode === "normal" ? "is-selected" : ""}`}
+                          aria-pressed={performanceMode === "normal"}
+                          onClick={() => onPerformanceMode("normal")}
+                        >
+                          Обычный
+                        </Button>
+                        <Button
+                          className={`prefs-button ${performanceMode === "potato" ? "is-selected" : ""}`}
+                          aria-pressed={performanceMode === "potato"}
+                          onClick={() => onPerformanceMode("potato")}
+                        >
+                          Potato
+                        </Button>
+                      </div>
+                    </Row>
                   </Group>
                   <Group
                     title="Учётная запись"

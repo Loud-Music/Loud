@@ -9,6 +9,7 @@ import {
 } from "../lib/coverPalette";
 
 interface Props {
+  enabled: boolean;
   audioGraph: RefObject<EqualizerGraph | undefined>;
   playing: boolean;
   exclusive: boolean;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function WaveShader({
+  enabled,
   audioGraph,
   playing,
   exclusive,
@@ -38,6 +40,11 @@ export default function WaveShader({
   const [fallbackColors, setFallbackColors] = useState(neutralPalette);
 
   useEffect(() => {
+    if (!enabled) {
+      targetPalette.current = neutralPalette;
+      setFallbackColors(neutralPalette);
+      return;
+    }
     let active = true;
     void coverPalette(cover).then(
       (colors) => {
@@ -56,13 +63,17 @@ export default function WaveShader({
     return () => {
       active = false;
     };
-  }, [cover]);
+  }, [cover, enabled]);
 
   useEffect(() => redraw.current(), [playing, exclusive, fallbackColors]);
 
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
+    if (!enabled) {
+      setFallback(true);
+      return;
+    }
     const gl = element.getContext("webgl", {
       alpha: false,
       antialias: false,
@@ -296,13 +307,13 @@ export default function WaveShader({
       motion.removeEventListener("change", wake);
       dispose();
     };
-  }, [audioGraph, generation]);
+  }, [audioGraph, enabled, generation]);
 
   return (
     <div
-      className={`wave-shader ${fallback ? "wave-shader-fallback" : ""}`}
+      className={`wave-shader ${!enabled ? "wave-shader-disabled" : fallback ? "wave-shader-fallback" : ""}`}
       style={
-        fallback
+        fallback && enabled
           ? {
               backgroundImage: `linear-gradient(140deg, ${fallbackColors.map((color) => `rgb(${color.map((value) => Math.round(value * 255)).join(" ")})`).join(", ")})`,
             }

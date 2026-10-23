@@ -19,6 +19,7 @@ import { readSetting, saveSetting } from "./library";
 import type { Track } from "./library";
 import { GaplessSession, prepareGapless } from "./gapless";
 import { playbackLog } from "./playbackLog";
+import { setPlaybackProgress } from "./playbackProgress";
 
 export interface OutputStatus {
   session: number;
@@ -77,7 +78,6 @@ export default function usePlayback(
     undefined,
   );
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(track.duration);
   const [volume, setVolume] = useState<number>(() =>
     readSetting("volume", 0.65),
@@ -274,7 +274,7 @@ export default function usePlayback(
       ) {
         adoptedGapless.current = segment.track.id;
         setTimelineOffset(segment.offset);
-        setProgress(
+        setPlaybackProgress(
           Math.max(0, (audio.current?.currentTime || 0) - segment.offset),
         );
         setDuration(segment.duration);
@@ -395,7 +395,7 @@ export default function usePlayback(
     key.current = "";
     finished.current = false;
     el.pause();
-    setProgress(0);
+    setPlaybackProgress(0);
     setDuration(track.duration);
     setOutput(idle);
     setBuffering(false);
@@ -674,7 +674,7 @@ export default function usePlayback(
         )
           return;
         setOutput(status);
-        setProgress(status.position);
+        setPlaybackProgress(status.position);
         if (status.duration) setDuration(status.duration);
         if (status.phase === "playing") {
           setPlaying(true);
@@ -806,7 +806,7 @@ export default function usePlayback(
         audio.current.currentTime =
           position + (gaplessSession.current?.active()?.offset || 0);
       }
-      setProgress(position);
+      setPlaybackProgress(position);
     },
     [exclusive, notify],
   );
@@ -829,7 +829,7 @@ export default function usePlayback(
     audio.current?.pause();
     setPlaying(false);
     setPreparing(false);
-    setProgress(0);
+    setPlaybackProgress(0);
     setOutput(idle);
     if (isDesktop())
       void invoke("exclusive_control", { action: "stop" }).catch(() => {});
@@ -902,7 +902,7 @@ export default function usePlayback(
     onTimeUpdate: () => {
       if (!exclusive) {
         const segment = gaplessSession.current?.active();
-        setProgress(
+        setPlaybackProgress(
           Math.max(
             0,
             (audio.current?.currentTime || 0) - (segment?.offset || 0),
@@ -951,7 +951,6 @@ export default function usePlayback(
     playbackFormat,
     playing,
     setPlaying,
-    progress,
     duration,
     volume,
     setVolume,

@@ -20,10 +20,10 @@ import { time, type Track } from "../lib/library";
 import type usePlayback from "../lib/usePlayback";
 import IconButton from "./IconButton";
 import ArtistNames from "./ArtistNames";
+import { usePlaybackProgress } from "../lib/playbackProgress";
 type Props = Pick<
   ReturnType<typeof usePlayback>,
   | "playing"
-  | "progress"
   | "duration"
   | "seek"
   | "togglePlay"
@@ -54,7 +54,6 @@ export default function Player({
   playing,
   current,
   favorites,
-  progress,
   duration,
   seek,
   shuffle,
@@ -78,6 +77,7 @@ export default function Player({
   toggleFavorite,
   onSettings,
 }: Props) {
+  const progress = usePlaybackProgress();
   return (
     <footer
       className={`player ${playing ? "is-playing" : ""}`}
