@@ -86,6 +86,22 @@ export function appleTracks(items: Recording[]): Track[] {
     }));
 }
 
+export async function appleTrack(id: string): Promise<Track | undefined> {
+  if (!/^\d+$/.test(id)) return;
+  for (const country of ["us", "ru"]) {
+    try {
+      const response = await catalogJSON<{ results: Recording[] }>(
+        "itunes",
+        `/lookup?${new URLSearchParams({ id, entity: "song", country })}`,
+      );
+      const track = appleTracks(response.results || []).find(
+        (track) => track.id === `apple:${id}`,
+      );
+      if (track) return track;
+    } catch {}
+  }
+}
+
 export async function appleArtistCatalog(name: string) {
   const key = (value: string) => value.normalize("NFKC").toLowerCase().trim();
   const search = await appleSearch(name);

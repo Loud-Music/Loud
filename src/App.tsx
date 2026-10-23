@@ -72,6 +72,7 @@ import { viewLabel, artistRoute, parseArtistRoute } from "./lib/navigation";
 import { mergeSearch } from "./lib/search";
 import { useDiscordPresence } from "./lib/useDiscordPresence";
 import usePlayback from "./lib/usePlayback";
+import useFavorites from "./lib/useFavorites";
 import useWave from "./lib/useWave";
 const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
 
@@ -106,12 +107,6 @@ export default function App({
   const [history, setHistory] = useState<View[]>([]);
   const [forward, setForward] = useState<View[]>([]);
   const [search, setSearch] = useState("");
-  const [favorites, setFavorites] = useState<string[]>(() =>
-    readSetting<string[]>("favorites", []).filter(
-      (id) =>
-        !["quiet-1", "focus-1", "night-1", "slow-1", "gold-1"].includes(id),
-    ),
-  );
   const [followedArtists, setFollowedArtists] = useState<string[]>(() =>
     readSetting("followedArtists:v1", []),
   );
@@ -165,6 +160,14 @@ export default function App({
     void loadLyrics(current).catch(() => {});
   }, [current.id, current.title, current.artist, current.duration]);
   const notify = useCallback((message: string) => setToast(message), []);
+  const {
+    favorites,
+    toggleFavorite,
+    recovering: recoveringFavorites,
+    missing: missingFavorites,
+    retry: retryFavorites,
+  } = useFavorites(tracks, selected, setTracks, ready, wave.feedback, notify);
+
   const {
     audio,
     audioProps,
@@ -270,9 +273,6 @@ export default function App({
     };
   }, [notify]);
   useEffect(() => {
-    saveSetting("favorites", favorites);
-  }, [favorites]);
-  useEffect(() => {
     saveSetting("playlists", playlists);
   }, [playlists]);
   useEffect(() => {
@@ -317,28 +317,6 @@ export default function App({
       setSearch("");
     },
     [view],
-  );
-  const toggleFavorite = useCallback(
-    (id: string) => {
-      const track =
-        tracks.find((t) => t.id === id) ||
-        (selected?.id === id ? selected : undefined);
-      if (track && !favorites.includes(id) && track.attributionUrl) {
-        setTracks((old) => [
-          ...old.filter((t) => t.id !== id),
-          { ...track, inLibrary: true },
-        ]);
-        void storeTracks([{ track }]).catch(() =>
-          notify("Не удалось сохранить трек в избранное."),
-        );
-      }
-      if (track)
-        wave.feedback(track, favorites.includes(id) ? "unlike" : "like");
-      setFavorites((old) =>
-        old.includes(id) ? old.filter((x) => x !== id) : [...old, id],
-      );
-    },
-    [tracks, selected, favorites, wave.feedback, notify],
   );
   const playTrack = useCallback(
     (track: Track, list?: Track[]) => {
@@ -835,7 +813,7 @@ export default function App({
           .toLowerCase()
           .includes(search.toLowerCase()),
     );
-    return mergeSearch(items, "");
+    return view === "Favorites" || playlist ? items : mergeSearch(items, "");
   }, [playlist, tracks, view, favorites, libraryTracks, search]);
   const albums = useMemo(
     () => [...new Map(visible.map((t) => [t.album, t])).values()],
@@ -1268,6 +1246,20 @@ export default function App({
             view !== "Downloads" &&
             view !== "Моя волна" && (
               <>
+                {view === "Favorites" && missingFavorites > 0 && (
+                  <div className="library-recovery" role="status">
+                    <span>
+                      {recoveringFavorites
+                        ? `Восстанавливаем записи избранного: ${missingFavorites}…`
+                        : `Не загружены записи песен: ${missingFavorites}. Лайки сохранены.`}
+                    </span>
+                    {!recoveringFavorites && (
+                      <Button className="text-button" onClick={retryFavorites}>
+                        Повторить
+                      </Button>
+                    )}
+                  </div>
+                )}
                 <div className="library-tools">
                   <div className="library-play-actions">
                     <Button

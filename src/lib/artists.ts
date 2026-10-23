@@ -142,6 +142,15 @@ export async function artistReleases(id: number, index = 0) {
   );
   return { releases: response.data, more: !!response.next };
 }
+
+export async function deezerTrack(id: string): Promise<Track | undefined> {
+  const song = await catalogJSON<CatalogSong>(
+    "deezer",
+    `/track/${checkedId(id)}`,
+  );
+  if (String(song.id) !== id) return;
+  return artistTracks([song], undefined, true)[0];
+}
 export async function releaseTracks(release: ArtistRelease) {
   if (Array.isArray(release.tracks)) return release.tracks;
   if (String(release.id).startsWith("apple:"))
@@ -257,6 +266,13 @@ function storedProfiles(): Record<
   } catch {
     return {};
   }
+}
+
+export function cachedCatalogTracks(): Track[] {
+  return Object.values(storedProfiles()).flatMap(({ profile }) => [
+    ...(profile?.songs || []),
+    ...(profile?.releases || []).flatMap((release) => release.tracks || []),
+  ]);
 }
 export function cachedArtistProfile(name: string, hint?: Artist) {
   const cached = storedProfiles()[artistIdentity(name, hint)]?.profile;

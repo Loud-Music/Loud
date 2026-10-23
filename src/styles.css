@@ -482,6 +482,15 @@ h1 {
 .compact .track-row {
   height: 51px;
 }
+.library-recovery {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
 .library-tools {
   display: flex;
   align-items: center;
