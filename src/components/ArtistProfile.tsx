@@ -22,14 +22,17 @@ import {
   isArtist,
   releaseTracks,
   type ArtistRelease,
+  type Artist,
 } from "../lib/artists";
 import { recordingKey, time, type Track } from "../lib/library";
 import ArtistCard from "./ArtistCard";
+import SelectField from "./SelectField";
 import { appleArtistImage } from "../lib/appleCatalog";
 import { artistPortrait } from "../lib/artistPortrait";
 
 export default function ArtistProfile({
   name,
+  hint,
   saved,
   followed,
   onFollow,
@@ -41,12 +44,13 @@ export default function ArtistProfile({
   playing,
 }: {
   name: string;
+  hint?: Artist;
   saved: Track[];
   followed: boolean;
   onFollow: () => void;
   onPlay: (track: Track, list: Track[]) => void;
   onAdd: (tracks: Track[]) => Promise<void>;
-  onArtist: (name: string) => void;
+  onArtist: (name: string, artist?: Artist) => void;
   onAlbum?: (release: ArtistRelease, artist: string) => void;
   currentId: string;
   playing: boolean;
@@ -69,14 +73,14 @@ export default function ArtistProfile({
   const local = saved.filter((track) => isArtist(track, name));
   useEffect(() => {
     let live = true;
-    const cached = cachedArtistProfile(name);
+    const cached = cachedArtistProfile(name, hint);
     setLoading(!cached);
     setError("");
     setProfile(cached);
     setMoreSongs(false);
     setFilter("all");
     setSelected(undefined);
-    void artistProfile(name, revision > 0)
+    void artistProfile(name, revision > 0, hint, saved)
       .then((value) => {
         if (live) {
           setProfile(value);
@@ -98,18 +102,20 @@ export default function ArtistProfile({
     return () => {
       live = false;
     };
-  }, [name, revision]);
+  }, [name, hint, revision]);
   useEffect(() => {
     let live = true;
     setPortrait(undefined);
     setPhotoFailed(false);
-    void artistPortrait(name, undefined, revision > 0).then((image) => {
-      if (live) setPortrait(image);
-    });
+    void artistPortrait(name, profile?.artist || hint, revision > 0).then(
+      (image) => {
+        if (live) setPortrait(image);
+      },
+    );
     return () => {
       live = false;
     };
-  }, [name, revision]);
+  }, [name, hint, profile?.artist.id, profile?.artist.catalog, revision]);
   useEffect(() => {
     const artist = profile?.artist;
     if (artist?.catalog !== "apple") return;
@@ -360,6 +366,24 @@ export default function ArtistProfile({
           {followed ? <Check size={16} /> : <Plus size={16} />}
           {followed ? "Вы подписаны" : "Подписаться"}
         </Button>
+        {(profile?.alternatives?.length || 0) > 1 && (
+          <SelectField
+            aria-label="Профиль артиста"
+            value={profile!.artist.id}
+            onValueChange={(value) => {
+              const choice = profile?.alternatives?.find(
+                (item) => String(item.artist.id) === value,
+              );
+              if (choice) onArtist(name, choice.artist);
+            }}
+          >
+            {profile!.alternatives!.map((choice) => (
+              <option key={choice.artist.id} value={choice.artist.id}>
+                {choice.artist.name} · {choice.label}
+              </option>
+            ))}
+          </SelectField>
+        )}
       </div>
       {(error || profile?.partial) && (
         <div className="artist-notice" role="status">

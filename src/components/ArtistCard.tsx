@@ -15,7 +15,7 @@ export default function ArtistCard({
   name: string;
   artist?: Artist;
   detail?: string;
-  onOpen: (name: string) => void;
+  onOpen: (name: string, artist?: Artist) => void;
   fallbackCover?: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
@@ -70,7 +70,7 @@ export default function ArtistCard({
     }
     if (current !== generation.current) return;
     if (photo) {
-      forgetPortrait(name);
+      forgetPortrait(name, artist);
       setPhoto(undefined);
       setFailed(true);
     } else setCoverFailed(true);
@@ -80,7 +80,7 @@ export default function ArtistCard({
       <Button
         className="artist-card-link"
         aria-label={`Открыть артиста ${name}`}
-        onClick={() => onOpen(name)}
+        onClick={() => onOpen(name, artist)}
       >
         <span className="artist-portrait" ref={ref}>
           {image ? (

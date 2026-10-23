@@ -633,3 +633,39 @@ html[data-platform="desktop"] .toolbar {
     flex-direction: column;
   }
 }
+
+.playback-setup-status {
+  position: fixed;
+  bottom: 100px;
+  right: 24px;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(460px, calc(100vw - 48px));
+  padding: 13px 16px;
+  border: 1px solid rgba(128, 128, 128, 0.2);
+  border-radius: 12px;
+  background: var(--surface, #252528);
+  color: var(--text, #f5f5f7);
+  box-shadow: 0 8px 30px #0003;
+  font-size: 12px;
+}
+.playback-setup-status svg {
+  flex-shrink: 0;
+}
+.playback-setup-details {
+  margin-top: 6px;
+}
+.playback-setup-details summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.playback-setup-details pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+  user-select: text;
+}

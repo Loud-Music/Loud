@@ -7,7 +7,7 @@ export default function ArtistSearch({
   onOpen,
 }: {
   query: string;
-  onOpen: (name: string) => void;
+  onOpen: (name: string, artist?: Artist) => void;
 }) {
   const [artists, setArtists] = useState<Artist[]>([]);
   useEffect(() => {

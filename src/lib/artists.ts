@@ -174,8 +174,8 @@ export async function releaseTracks(release: ArtistRelease) {
   }
   return artistTracks(items, release, true);
 }
-async function deezerProfile(name: string) {
-  const artist = await findArtist(name);
+async function deezerProfile(name: string, hint?: Artist) {
+  const artist = hint || (await findArtist(name));
   if (!artist) return;
   const results = await Promise.allSettled([
     page<CatalogSong>(`/artist/${artist.id}/top?limit=20`).then((response) =>
@@ -239,8 +239,11 @@ interface ArtistCatalog {
   more: boolean;
   related: Artist[];
   partial: boolean;
+  alternatives?: { artist: Artist; label: string }[];
 }
-const profilesKey = "loud:artist-catalogs:v1";
+export const artistIdentity = (name: string, artist?: Artist) =>
+  artist ? `${artist.catalog || "deezer"}:${artist.id}` : artistKey(name);
+const profilesKey = "loud:artist-catalogs:v2";
 const profileRequests = new Map<string, Promise<ArtistCatalog>>();
 function storedProfiles(): Record<
   string,
@@ -255,8 +258,8 @@ function storedProfiles(): Record<
     return {};
   }
 }
-export function cachedArtistProfile(name: string) {
-  const cached = storedProfiles()[artistKey(name)]?.profile;
+export function cachedArtistProfile(name: string, hint?: Artist) {
+  const cached = storedProfiles()[artistIdentity(name, hint)]?.profile;
   return cached &&
     artistKey(cached.artist?.name || "") === artistKey(name) &&
     Array.isArray(cached.songs) &&
@@ -268,9 +271,11 @@ export function cachedArtistProfile(name: string) {
 export async function artistProfile(
   name: string,
   refresh = false,
+  hint?: Artist,
+  saved: Track[] = [],
 ): Promise<ArtistCatalog> {
-  const key = artistKey(name);
-  const cached = cachedArtistProfile(name);
+  const key = artistIdentity(name, hint);
+  const cached = cachedArtistProfile(name, hint);
   if (
     !refresh &&
     cached &&
@@ -285,11 +290,19 @@ export async function artistProfile(
       throw new Error("Каталог артиста недоступен");
     return profile;
   };
-  const request = Promise.any([
-    deezerProfile(name).then(useful),
-    appleProfile(name).then(useful),
-    appleWebProfile(name).then(useful),
-  ])
+  const load =
+    hint && hint.catalog !== "apple"
+      ? deezerProfile(name, hint).then(useful)
+      : appleWebProfile(name, hint, saved)
+          .then(useful)
+          .catch((error) => {
+            if (hint) throw error;
+            return Promise.any([
+              deezerProfile(name).then(useful),
+              appleProfile(name).then(useful),
+            ]);
+          });
+  const request = load
     .then((profile) => {
       const entries = storedProfiles();
       entries[key] = { at: Date.now(), profile };

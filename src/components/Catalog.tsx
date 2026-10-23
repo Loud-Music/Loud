@@ -1,3 +1,4 @@
+import type { Artist } from "../lib/artists";
 import CheckField from "./CheckField";
 import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { errorMessage } from "../lib/errors";
@@ -44,7 +45,7 @@ export default function Catalog({
   query: string;
   onFocusSearch: () => void;
   onInfo: (track: Track) => void;
-  onArtist: (name: string) => void;
+  onArtist: (name: string, artist?: Artist) => void;
 }) {
   const [term, setTerm] = useState(query.trim());
   const [page, setPage] = useState(1);

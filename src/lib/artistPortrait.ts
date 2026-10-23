@@ -1,4 +1,4 @@
-import { findArtist, artistKey, type Artist } from "./artists";
+import { findArtist, artistKey, artistIdentity, type Artist } from "./artists";
 import { appleArtistImage } from "./appleCatalog";
 import { catalogJSON } from "./catalogRequest";
 import { persistentGet, persistentSet } from "./persistence";
@@ -18,12 +18,12 @@ async function limited<T>(task: () => Promise<T>) {
     else active--;
   }
 }
-export function forgetPortrait(name: string) {
+export function forgetPortrait(name: string, hint?: Artist) {
   const entries = saved();
-  delete entries[artistKey(name)];
+  delete entries[artistIdentity(name, hint)];
   persistentSet(cacheKey, JSON.stringify(entries));
 }
-const cacheKey = "loud:artist-portraits:v1";
+const cacheKey = "loud:artist-portraits:v2";
 type Saved = Record<string, { url: string; at: number }>;
 function saved(): Saved {
   try {
@@ -62,7 +62,7 @@ async function applePortrait(name: string) {
   return image;
 }
 export function artistPortrait(name: string, hint?: Artist, retry = false) {
-  const key = artistKey(name);
+  const key = artistIdentity(name, hint);
   if (retry) pending.delete(key);
   const existing = pending.get(key);
   if (existing) return existing;
@@ -77,13 +77,29 @@ export function artistPortrait(name: string, hint?: Artist, retry = false) {
       return image;
     })();
     const web = appleWebArtists(name).then((artists) => {
-      const image = artists.find(
-        (item) => artistKey(item.name) === key,
+      const image = artists.find((item) =>
+        hint
+          ? hint.catalog === "apple" && item.id === hint.id
+          : artistKey(item.name) === artistKey(name),
       )?.picture_xl;
       if (!image) throw new Error("Portrait unavailable");
       return image;
     });
-    return Promise.any([deezer, applePortrait(name), web])
+    const choices = hint
+      ? [
+          deezer,
+          web,
+          ...(hint.catalog === "apple"
+            ? [
+                appleArtistImage(hint.id).then((image) => {
+                  if (!image) throw new Error("Portrait unavailable");
+                  return image;
+                }),
+              ]
+            : []),
+        ]
+      : [deezer, applePortrait(name), web];
+    return Promise.any(choices)
       .then((url) => {
         if (!url.startsWith("https://")) return undefined;
         const entries = saved();

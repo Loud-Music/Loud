@@ -52,7 +52,7 @@ import Wave from "./components/Wave";
 import type { LocalAccount } from "./lib/accounts";
 import { albumRoute, parseAlbumRoute } from "./lib/albums";
 import { connectApple } from "./lib/apple";
-import { artistKey, isArtist } from "./lib/artists";
+import { artistKey, isArtist, type Artist } from "./lib/artists";
 import { prefetchAudio } from "./lib/extractor";
 import { importLibrary } from "./lib/import";
 import { importSoundCloud } from "./lib/soundcloudImport";
@@ -68,7 +68,7 @@ import {
 import { loadKaraoke, loadLyrics } from "./lib/lyrics";
 import { prepareLyrics, useLyricsPrefetch } from "./lib/lyricsPrefetch";
 import type { View } from "./lib/navigation";
-import { viewLabel } from "./lib/navigation";
+import { viewLabel, artistRoute, parseArtistRoute } from "./lib/navigation";
 import { mergeSearch } from "./lib/search";
 import { useDiscordPresence } from "./lib/useDiscordPresence";
 import usePlayback from "./lib/usePlayback";
@@ -763,10 +763,10 @@ export default function App({
   }
 
   const openArtist = useCallback(
-    (name: string) => {
+    (name: string, artist?: Artist) => {
       if (name.trim()) {
         setSelected(null);
-        navigate(`artist:${name}`);
+        navigate(artistRoute(name, artist));
       }
     },
     [navigate],
@@ -781,6 +781,10 @@ export default function App({
     });
   };
   const artistView = view.startsWith("artist:");
+  const artistSeed = useMemo(
+    () => (artistView ? parseArtistRoute(view.slice(7)) : undefined),
+    [view, artistView],
+  );
   const albumView = view.startsWith("album:");
   const albumSeed = albumView ? parseAlbumRoute(view.slice(6)) : undefined;
   const openAlbum = (track: Track) =>
@@ -799,6 +803,7 @@ export default function App({
   const playlist = playlists.find((p) => view === `playlist:${p.id}`);
   const viewTitle =
     albumSeed?.title ||
+    artistSeed?.name ||
     playlist?.name ||
     (view.startsWith("album:") ||
     view.startsWith("artist:") ||
@@ -815,7 +820,9 @@ export default function App({
         : view.startsWith("album:")
           ? tracks.filter((t) => t.album === view.slice(6))
           : view.startsWith("artist:")
-            ? tracks.filter((t) => t.artist === view.slice(7))
+            ? tracks.filter((t) =>
+                isArtist(t, parseArtistRoute(view.slice(7)).name),
+              )
             : view.startsWith("source:")
               ? tracks.filter((t) => t.source === view.slice(7))
               : libraryTracks;
@@ -900,7 +907,7 @@ export default function App({
         setModal={setModal}
       />
       <div className="main-shell">
-        <header className="toolbar" data-tauri-drag-region>
+        <header className="toolbar" data-tauri-drag-region="deep">
           <div className="toolbar-left">
             <SidebarTrigger />
             <IconButton
@@ -1020,12 +1027,13 @@ export default function App({
               onAlbum={(release, artistName) =>
                 navigate(albumRoute({ ...release, artistName }))
               }
-              name={view.slice(7)}
+              name={artistSeed!.name}
+              hint={artistSeed?.artist}
               saved={libraryTracks}
               followed={followedArtists.some(
-                (name) => artistKey(name) === artistKey(view.slice(7)),
+                (name) => artistKey(name) === artistKey(artistSeed!.name),
               )}
-              onFollow={() => followArtist(view.slice(7))}
+              onFollow={() => followArtist(artistSeed!.name)}
               onPlay={playCatalogTrack}
               onAdd={addCatalogTracks}
               onArtist={openArtist}

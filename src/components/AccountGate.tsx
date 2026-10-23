@@ -47,7 +47,7 @@ export default function AccountGate() {
   }
   if (account) return <App account={account} onSwitchAccount={signOut} />;
   return (
-    <main className="account-screen" data-tauri-drag-region>
+    <main className="account-screen" data-tauri-drag-region="deep">
       {"__TAURI_INTERNALS__" in window && (
         <div className="account-window-controls">
           <Button
@@ -66,6 +66,7 @@ export default function AccountGate() {
       )}
       <form
         className="account-card"
+        data-tauri-drag-region="false"
         onSubmit={(event) => {
           event.preventDefault();
           void submit();

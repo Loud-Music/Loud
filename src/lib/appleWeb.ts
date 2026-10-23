@@ -69,8 +69,8 @@ export async function appleWebArtists(name: string) {
     .filter((item): item is Artist => !!item);
   const unique = new Map<string, Artist>();
   for (const item of artists) {
-    const key = artistKey(item.name);
-    if (key.startsWith(artistKey(name)) && !unique.has(key))
+    const key = String(item.id);
+    if (artistKey(item.name).startsWith(artistKey(name)) && !unique.has(key))
       unique.set(key, item);
   }
   return [...unique.values()];
@@ -141,11 +141,7 @@ function songs(
     ];
   });
 }
-export async function appleWebProfile(name: string) {
-  const match = (await appleWebArtists(name)).find(
-    (item) => artistKey(item.name) === artistKey(name),
-  );
-  if (!match) throw new Error("Артист не найден");
+async function profileById(match: Artist) {
   const page = await catalogJSON<WebPage>("appleweb", `/us/artist/${match.id}`);
   const header = page.sections.find(
     (section) => section.itemKind === "artistDetailHeader",
@@ -198,6 +194,72 @@ export async function appleWebProfile(name: string) {
   if (!catalog.songs.length && !catalog.releases.length)
     throw new Error("Каталог артиста пуст");
   return catalog;
+}
+export async function appleWebProfile(
+  name: string,
+  hint?: Artist,
+  saved: Track[] = [],
+) {
+  const matches = (
+    await appleWebArtists(name).catch((error) => {
+      if (hint?.catalog === "apple") return [hint];
+      throw error;
+    })
+  ).filter((item) => artistKey(item.name) === artistKey(name));
+  if (hint?.catalog === "apple") {
+    const index = matches.findIndex((item) => item.id === hint.id);
+    if (index >= 0) matches.splice(index, 1);
+    matches.unshift(hint);
+  }
+  if (!matches.length) throw new Error("Артист не найден");
+  const results = await Promise.allSettled(
+    matches.slice(0, 4).map(profileById),
+  );
+  const profiles = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  if (!profiles.length) throw new Error("Каталог артиста недоступен");
+  const evidence = saved.filter((track) =>
+    trackArtists(track).some((artist) => artistKey(artist) === artistKey(name)),
+  );
+  const score = (profile: (typeof profiles)[number]) => {
+    const albums = new Set(
+      profile.releases.map((release) =>
+        artistKey(release.title.replace(/\s*-\s*(Single|EP)$/i, "")),
+      ),
+    );
+    const titles = new Set(
+      profile.songs.map((track) => artistKey(track.title)),
+    );
+    const matches = evidence.filter(
+      (track) =>
+        albums.has(artistKey(track.album)) ||
+        titles.has(artistKey(track.title)),
+    ).length;
+    return (
+      matches * 10000 +
+      profile.releases.filter((release) => release.record_type === "album")
+        .length *
+        100 +
+      profile.releases.length
+    );
+  };
+  const selected = hint
+    ? profiles.find((profile) => profile.artist.id === hint.id)
+    : [...profiles].sort((a, b) => score(b) - score(a))[0];
+  if (!selected) throw new Error("Выбранный профиль артиста недоступен");
+  return {
+    ...selected,
+    partial: results.some((result) => result.status === "rejected"),
+    alternatives: profiles.map((profile) => ({
+      artist: profile.artist,
+      label:
+        profile.releases.find((release) => release.record_type === "album")
+          ?.title ||
+        profile.releases[0]?.title ||
+        profile.artist.name,
+    })),
+  };
 }
 export async function appleWebAlbum(id: string) {
   if (!/^\d+$/.test(id)) throw new Error("Неверный ID альбома");
