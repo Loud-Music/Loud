@@ -1,22 +1,24 @@
+import { SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { errorMessage } from "./lib/errors";
 import {
-  ArrowDownToLine,
+  Download,
   ArrowRight,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   Heart,
-  ListMusic,
+  Queue,
   Square,
   Minus,
-  Music2,
+  Music,
   Play,
   Plus,
   Search,
   Shuffle,
   Users,
   X,
-} from "lucide-react";
+} from "./icons";
 import type { ChangeEvent } from "react";
 import {
   lazy,
@@ -31,6 +33,10 @@ import AlbumPage from "./components/AlbumPage";
 import ArtistCard from "./components/ArtistCard";
 import ArtistProfile from "./components/ArtistProfile";
 import Catalog from "./components/Catalog";
+import CommunityNotice from "./components/CommunityNotice";
+import DownloadsPage from "./components/DownloadsPage";
+import DownloadCollection from "./components/DownloadCollection";
+import useOffline from "./lib/useOffline";
 import IconButton from "./components/IconButton";
 import ImportDialog from "./components/ImportDialog";
 import LibraryAlbumCard from "./components/LibraryAlbumCard";
@@ -47,9 +53,10 @@ import type { LocalAccount } from "./lib/accounts";
 import { albumRoute, parseAlbumRoute } from "./lib/albums";
 import { connectApple } from "./lib/apple";
 import { artistKey, isArtist } from "./lib/artists";
-import { downloadTrack } from "./lib/catalog";
 import { prefetchAudio } from "./lib/extractor";
 import { importLibrary } from "./lib/import";
+import { importSoundCloud } from "./lib/soundcloudImport";
+import { flushPersistence } from "./lib/persistence";
 import type { Playlist, Track } from "./lib/library";
 import {
   readSetting,
@@ -140,7 +147,9 @@ export default function App({
   const current = tracks.find((t) => t.id === currentId) || idleTrack;
   const gaplessQueue = useMemo(() => {
     const playable = new Set(
-      tracks.filter((track) => track.src).map((track) => track.id),
+      tracks
+        .filter((track) => track.src || track.extractorUrl)
+        .map((track) => track.id),
     );
     return queue.filter((id) => playable.has(id));
   }, [queue, tracks]);
@@ -183,6 +192,32 @@ export default function App({
     togglePlay,
   } = usePlayback(current, notify, onEnded, gaplessNext);
   useDiscordPresence(current, playing, progress, duration);
+  const deferredOffline = useRef(new Map<string, Track>());
+  const receiveOffline = useCallback(
+    (saved: Track) => {
+      if (saved.id === currentId && playing) {
+        deferredOffline.current.set(saved.id, saved);
+        return;
+      }
+      setTracks((old) => [
+        ...old.filter((track) => track.id !== saved.id),
+        saved,
+      ]);
+    },
+    [currentId, playing],
+  );
+  const offline = useOffline(account.id, ready, audioLoading, receiveOffline);
+  useEffect(() => {
+    const ready = [...deferredOffline.current.values()].filter(
+      (track) => track.id !== currentId || !playing,
+    );
+    if (!ready.length) return;
+    ready.forEach((track) => deferredOffline.current.delete(track.id));
+    setTracks((old) => [
+      ...old.filter((track) => !ready.some((saved) => saved.id === track.id)),
+      ...ready,
+    ]);
+  }, [currentId, playing]);
   const nextQueueIds = queue
     .slice(
       Math.max(0, queue.indexOf(currentId) + 1),
@@ -271,6 +306,7 @@ export default function App({
 
   const navigate = useCallback(
     (next: View) => {
+      setLyricsOpen(false);
       if (view !== next) {
         setHistory((h) => [...h, view]);
         setForward([]);
@@ -306,12 +342,13 @@ export default function App({
     (track: Track, list?: Track[]) => {
       setWaveActive(false);
       waveSession.current++;
-      if (!track.src) {
+      if (!track.src && !track.extractorUrl) {
         setSelected(track);
         notify("Для воспроизведения добавьте аудиофайл к этой записи.");
         return;
       }
-      if (list) setQueue(list.filter((t) => t.src).map((t) => t.id));
+      if (list)
+        setQueue(list.filter((t) => t.src || t.extractorUrl).map((t) => t.id));
       if (track.id === currentId) {
         void play();
       } else {
@@ -390,10 +427,11 @@ export default function App({
         e.preventDefault();
         togglePlay();
       }
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !document.querySelector('[role="dialog"]')) {
         setModal(null);
         setSelected(null);
         setQueueOpen(false);
+        setLyricsOpen(false);
       }
     };
     window.addEventListener("keydown", keydown);
@@ -491,7 +529,7 @@ export default function App({
       if (fileInput.current) fileInput.current.value = "";
     }
   }
-  async function addCatalogTracks(items: Track[]) {
+  async function addCatalogTracks(items: Track[], announce = true) {
     const merged = items.map((track) => ({
       ...(tracks.find((t) => t.id === track.id && t.downloaded) || track),
       inLibrary: true,
@@ -502,9 +540,48 @@ export default function App({
       merged.forEach((track) => map.set(track.id, track));
       return [...map.values()];
     });
-    notify(`Добавлено в медиатеку: ${items.length}.`);
+    if (announce) notify(`Добавлено в медиатеку: ${items.length}.`);
+  }
+  async function handleSoundCloud(url: string) {
+    setBusy(true);
+    try {
+      const result = await importSoundCloud(url);
+      await addCatalogTracks(result.tracks, false);
+      if (result.id) {
+        const id = result.id;
+        const previous = playlists.find((playlist) => playlist.id === id);
+        const imported = {
+          id,
+          name: result.name,
+          tracks: [
+            ...new Set([
+              ...(previous?.tracks || []),
+              ...result.tracks.map((track) => track.id),
+            ]),
+          ],
+        };
+        const next = [
+          ...playlists.filter((playlist) => playlist.id !== id),
+          imported,
+        ];
+        saveSetting("playlists", next);
+        await flushPersistence();
+        setPlaylists(next);
+        navigate(`playlist:${id}`);
+      } else navigate("Songs");
+      setModal(null);
+      notify(
+        `Добавлено песен: ${result.tracks.length}.${result.skipped ? ` Недоступно или повторяется: ${result.skipped}.` : ""}`,
+      );
+    } finally {
+      setBusy(false);
+    }
   }
   function playCatalogTrack(track: Track, list: Track[], waveMode = false) {
+    const local = (song: Track) =>
+      tracks.find((saved) => saved.id === song.id && saved.downloaded) || song;
+    track = local(track);
+    list = list.map(local);
     setWaveActive(waveMode);
     if (!waveMode) {
       waveSession.current++;
@@ -619,15 +696,16 @@ export default function App({
     if (downloading) return;
     setDownloading(track.id);
     try {
-      const saved = await downloadTrack(track);
-      setTracks((old) => {
-        const map = new Map(old.map((t) => [t.id, t]));
-        map.set(saved.id, saved);
-        return [...map.values()];
-      });
-      notify(
-        `Original ${track.format || "audio"} downloaded. Available offline.`,
+      await offline.enqueue(
+        {
+          id: `track:${track.id}`,
+          name: track.title,
+          kind: "tracks",
+          tracks: [track.id],
+        },
+        [track],
       );
+      notify("Трек добавлен в очередь офлайн-загрузки.");
     } catch (error) {
       notify(errorMessage(error));
     } finally {
@@ -767,7 +845,21 @@ export default function App({
       ].sort((a, b) => a.localeCompare(b)),
     [libraryTracks, followedArtists],
   );
-  const playable = useMemo(() => visible.filter((t) => t.src), [visible]);
+  const playable = useMemo(
+    () => visible.filter((t) => t.src || t.extractorUrl),
+    [visible],
+  );
+  useEffect(() => {
+    if (
+      !playlist ||
+      !playable[0] ||
+      playable[0].downloaded ||
+      navigator.onLine === false
+    )
+      return;
+    const timer = window.setTimeout(() => prefetchAudio(playable[0]), 80);
+    return () => window.clearTimeout(timer);
+  }, [playlist?.id, playable[0]?.id]);
   useLyricsPrefetch(
     wave.recommendations.length && view === "Моя волна"
       ? wave.recommendations
@@ -775,7 +867,7 @@ export default function App({
   );
 
   return (
-    <div
+    <SidebarProvider
       className="app-shell"
       onDragEnter={(e) => {
         e.preventDefault();
@@ -799,11 +891,8 @@ export default function App({
     >
       <Sidebar
         view={view}
-        search={search}
-        searchInput={searchInput}
-        setView={setView}
-        setSearch={setSearch}
         favorites={favorites}
+        downloadCount={offline.pending}
         playlists={playlists}
         account={account}
         onSwitchAccount={onSwitchAccount}
@@ -813,6 +902,7 @@ export default function App({
       <div className="main-shell">
         <header className="toolbar" data-tauri-drag-region>
           <div className="toolbar-left">
+            <SidebarTrigger />
             <IconButton
               icon={ChevronLeft}
               label="Назад"
@@ -822,6 +912,7 @@ export default function App({
                 setForward((f) => [...f, view]);
                 setHistory((h) => h.slice(0, -1));
                 setView(prev);
+                setLyricsOpen(false);
                 setSearch("");
               }}
             />
@@ -834,20 +925,33 @@ export default function App({
                 setHistory((h) => [...h, view]);
                 setForward((f) => f.slice(0, -1));
                 setView(next);
+                setLyricsOpen(false);
                 setSearch("");
               }}
             />
-            <span className="breadcrumb">
-              <strong>{viewTitle}</strong>
-            </span>
+            <label className="global-search">
+              <Search size={16} />
+              <input
+                ref={searchInput}
+                type="search"
+                aria-label="Поиск музыки"
+                placeholder="Песни, альбомы, артисты"
+                value={search}
+                onChange={(event) => {
+                  setLyricsOpen(false);
+                  setView("Discover");
+                  setSearch(event.target.value);
+                }}
+              />
+            </label>
           </div>
           <div className="toolbar-right">
-            <button
+            <Button
               className="button button-subtle import-button"
               onClick={() => setModal("import")}
             >
               <Plus size={16} /> Импорт музыки
-            </button>
+            </Button>
             <div className="native-controls">
               <IconButton
                 icon={Minus}
@@ -870,6 +974,7 @@ export default function App({
         <main
           className={`content ${view === "Моя волна" ? "content-wave" : ""}`}
           key={view}
+          hidden={lyricsOpen}
         >
           {!artistView && !albumView && view !== "Моя волна" && (
             <section className="page-heading">
@@ -877,9 +982,11 @@ export default function App({
                 <h1>{search ? `Результаты поиска «${search}»` : viewTitle}</h1>
                 {!home && view !== "Discover" && (
                   <p>
-                    {view === "Artists"
-                      ? `${artists.length} артистов`
-                      : `${visible.length} треков${playlist ? " · Плейлист" : ""}`}
+                    {view === "Downloads"
+                      ? `${offline.pending} в очереди`
+                      : view === "Artists"
+                        ? `${artists.length} артистов`
+                        : `${visible.length} треков${playlist ? " · Плейлист" : ""}`}
                   </p>
                 )}
               </div>
@@ -894,6 +1001,18 @@ export default function App({
               onArtist={openArtist}
               currentId={currentId}
               playing={playing}
+              offlineJobs={offline.jobs}
+              onDownload={offline.enqueue}
+              openDownloads={() => navigate("Downloads")}
+            />
+          )}
+          {view === "Downloads" && (
+            <DownloadsPage
+              state={offline}
+              progress={offline.progress}
+              online={offline.online}
+              control={offline.control}
+              play={playCatalogTrack}
             />
           )}
           {artistView && (
@@ -921,6 +1040,14 @@ export default function App({
                   <ArtistCard
                     key={artistKey(name)}
                     name={name}
+                    fallbackCover={
+                      libraryTracks.find(
+                        (track) =>
+                          isArtist(track, name) &&
+                          track.cover &&
+                          !track.cover.startsWith("/covers/"),
+                      )?.cover
+                    }
                     detail={
                       followedArtists.some(
                         (item) => artistKey(item) === artistKey(name),
@@ -940,13 +1067,13 @@ export default function App({
                   Подписывайтесь на артистов или добавляйте их музыку в
                   медиатеку.
                 </p>
-                <button
+                <Button
                   className="button button-accent"
                   onClick={() => navigate("Discover")}
                 >
                   Найти артиста
                   <ArrowRight size={15} />
-                </button>
+                </Button>
               </div>
             ))}
           {view === "Моя волна" && (
@@ -976,7 +1103,7 @@ export default function App({
           {view === "Discover" && (
             <Catalog
               query={search}
-              onQueryChange={setSearch}
+              onFocusSearch={() => searchInput.current?.focus()}
               onInfo={setSelected}
               onArtist={openArtist}
               onAdd={addCatalogTracks}
@@ -988,22 +1115,22 @@ export default function App({
           )}
           {home && libraryTracks.length === 0 && (
             <section className="catalog-empty">
-              <Music2 size={32} />
+              <Music size={32} />
               <h2>В медиатеке пока пусто</h2>
               <p>Добавьте найденную музыку или импортируйте аудиофайлы.</p>
               <div className="catalog-album-actions">
-                <button
+                <Button
                   className="button button-accent"
                   onClick={() => navigate("Discover")}
                 >
                   Найти музыку
-                </button>
-                <button
+                </Button>
+                <Button
                   className="button button-subtle"
                   onClick={() => setModal("import")}
                 >
                   Импорт музыки
-                </button>
+                </Button>
               </div>
             </section>
           )}
@@ -1012,12 +1139,12 @@ export default function App({
               <section className="albums-section">
                 <div className="section-heading">
                   <h2>Недавно добавленные</h2>
-                  <button
+                  <Button
                     className="text-button"
                     onClick={() => navigate("Albums")}
                   >
                     Показать все <ChevronRight size={14} />
-                  </button>
+                  </Button>
                 </div>
                 <div className="album-grid">
                   {[...new Map(libraryTracks.map((t) => [t.album, t])).values()]
@@ -1038,12 +1165,12 @@ export default function App({
               <section className="playlist-section">
                 <div className="section-heading">
                   <h2>Ваши плейлисты</h2>
-                  <button
+                  <Button
                     className="text-button"
                     onClick={() => setModal("playlist")}
                   >
                     <Plus size={14} /> Новый плейлист
-                  </button>
+                  </Button>
                 </div>
                 <div className="playlist-cards">
                   {playlists.slice(0, 3).map((p) => {
@@ -1052,7 +1179,7 @@ export default function App({
                       .filter((t): t is Track => !!t);
                     return (
                       <article className="playlist-card" key={p.id}>
-                        <button
+                        <Button
                           className="playlist-artwork"
                           onClick={() => navigate(`playlist:${p.id}`)}
                           aria-label={`Открыть плейлист ${p.name}`}
@@ -1066,16 +1193,16 @@ export default function App({
                               />
                             ))
                           ) : (
-                            <ListMusic size={45} />
+                            <Queue size={45} />
                           )}
-                        </button>
+                        </Button>
                         <div>
-                          <button
+                          <Button
                             className="album-name"
                             onClick={() => navigate(`playlist:${p.id}`)}
                           >
                             {p.name}
-                          </button>
+                          </Button>
                           <span className="album-artist">
                             {items.length} треков
                           </span>
@@ -1083,9 +1210,11 @@ export default function App({
                         <IconButton
                           icon={Play}
                           label={`Слушать плейлист ${p.name}`}
-                          disabled={!items.some((t) => t.src)}
+                          disabled={!items.some((t) => t.src || t.extractorUrl)}
                           onClick={() => {
-                            const list = items.filter((t) => t.src);
+                            const list = items.filter(
+                              (t) => t.src || t.extractorUrl,
+                            );
                             if (list[0]) playTrack(list[0], list);
                           }}
                         />
@@ -1097,12 +1226,12 @@ export default function App({
               <section className="recent-section">
                 <div className="section-heading">
                   <h2>Песни</h2>
-                  <button
+                  <Button
                     className="text-button"
                     onClick={() => navigate("Songs")}
                   >
                     Показать все <ChevronRight size={14} />
-                  </button>
+                  </Button>
                 </div>
                 {
                   <TrackTable
@@ -1126,19 +1255,20 @@ export default function App({
             !albumView &&
             view !== "Artists" &&
             view !== "Discover" &&
+            view !== "Downloads" &&
             view !== "Моя волна" && (
               <>
                 <div className="library-tools">
                   <div className="library-play-actions">
-                    <button
+                    <Button
                       className="button button-accent"
                       disabled={!playable.length}
                       onClick={() => playTrack(playable[0], playable)}
                     >
                       <Play size={14} fill="currentColor" /> Слушать
                       {playlist ? " плейлист" : " всё"}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       className="button button-subtle"
                       disabled={!playable.length}
                       onClick={() => {
@@ -1150,8 +1280,22 @@ export default function App({
                       }}
                     >
                       <Shuffle size={15} /> Перемешать
-                    </button>
+                    </Button>
                   </div>
+                  {playlist && (
+                    <DownloadCollection
+                      group={{
+                        id: `playlist:${playlist.id}`,
+                        name: playlist.name,
+                        kind: "playlist",
+                        tracks: visible.map((track) => track.id),
+                      }}
+                      tracks={visible}
+                      jobs={offline.jobs}
+                      enqueue={offline.enqueue}
+                      open={() => navigate("Downloads")}
+                    />
+                  )}
                   <span className="sort-label">
                     {visible.length} треков <ChevronDown size={13} />
                   </span>
@@ -1163,7 +1307,7 @@ export default function App({
                     ) : search ? (
                       <Search size={40} />
                     ) : (
-                      <Music2 size={40} />
+                      <Music size={40} />
                     )}
                     <h2>
                       {search
@@ -1183,7 +1327,7 @@ export default function App({
                             ? "Добавьте песню в плейлист через её меню."
                             : "Импортируйте аудиофайлы или медиатеку из другого сервиса."}
                     </p>
-                    <button
+                    <Button
                       className="button button-accent"
                       onClick={() =>
                         playlist || view === "Favorites"
@@ -1199,7 +1343,7 @@ export default function App({
                           ? "Очистить поиск"
                           : "Импорт музыки"}
                       <ArrowRight size={15} />
-                    </button>
+                    </Button>
                   </div>
                 ) : grid ? (
                   <div className="album-grid library-grid">
@@ -1230,6 +1374,17 @@ export default function App({
               </>
             )}
         </main>
+        {lyricsOpen && (
+          <LyricsPanel
+            timelineOffset={timelineOffset}
+            track={current}
+            playing={playing}
+            progress={progress}
+            audio={exclusive ? undefined : audio}
+            seek={seek}
+            close={() => setLyricsOpen(false)}
+          />
+        )}
       </div>
 
       <Player
@@ -1274,17 +1429,6 @@ export default function App({
         }
       />
 
-      {lyricsOpen && (
-        <LyricsPanel
-          timelineOffset={timelineOffset}
-          track={current}
-          playing={playing}
-          progress={progress}
-          audio={exclusive ? undefined : audio}
-          seek={seek}
-          close={() => setLyricsOpen(false)}
-        />
-      )}
       {queueOpen && (
         <QueuePanel
           current={current}
@@ -1306,6 +1450,7 @@ export default function App({
           }}
           onBrowse={() => fileInput.current?.click()}
           onApple={handleApple}
+          onSoundCloud={handleSoundCloud}
         />
       )}
       {modal === "playlist" && (
@@ -1402,12 +1547,25 @@ export default function App({
       {dragging && (
         <div className="file-drag-overlay">
           <div>
-            <ArrowDownToLine size={50} />
+            <Download size={50} />
             <h2>Импорт музыки</h2>
             <p>Перетащите файлы в окно для импорта.</p>
           </div>
         </div>
       )}
+      <CommunityNotice
+        enabled={
+          ready &&
+          !busy &&
+          !modal &&
+          !selected &&
+          !toast &&
+          !audioLoading &&
+          !dragging &&
+          !lyricsOpen &&
+          !queueOpen
+        }
+      />
       {toast && (
         <div className="toast" role="status">
           <span>{toast}</span>
@@ -1418,6 +1576,6 @@ export default function App({
           />
         </div>
       )}
-    </div>
+    </SidebarProvider>
   );
 }

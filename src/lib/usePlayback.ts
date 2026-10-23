@@ -426,9 +426,9 @@ export default function usePlayback(
           );
           if (token !== generation.current) return resolved;
           if (isDesktop())
-            await invoke("audio_cache_pin", {
+            void invoke("audio_cache_pin", {
               key: resolved.nativeKey || resolved.streamCacheKey || null,
-            });
+            }).catch(() => {});
           if (token !== generation.current) return resolved;
           selected =
             resolved.playbackSource ||

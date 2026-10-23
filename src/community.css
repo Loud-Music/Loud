@@ -1,0 +1,96 @@
+.community-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.community-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--control);
+  color: var(--text);
+  text-decoration: none;
+}
+.community-link:hover {
+  background: var(--selection);
+}
+.community-link > svg {
+  flex-shrink: 0;
+}
+.community-link-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.community-link-copy strong {
+  font-size: 12px;
+  font-weight: 550;
+}
+.community-link-copy > span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.community-link-error {
+  width: 100%;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.community-links-detailed {
+  width: 100%;
+  max-width: 360px;
+  flex-direction: column;
+  margin-top: 24px;
+  text-align: left;
+}
+.community-links-detailed .community-link {
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+}
+.community-links-detailed .community-link > svg:last-child {
+  margin-left: auto;
+  color: var(--muted);
+}
+.community-notice {
+  position: fixed;
+  right: 24px;
+  bottom: 112px;
+  width: min(360px, calc(100vw - 48px));
+  z-index: 45;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 12px 40px #0003;
+}
+.community-notice-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.community-notice h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.community-notice-heading .icon-button {
+  width: 28px;
+  height: 28px;
+}
+.community-notice > p {
+  margin: 8px 0 16px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}

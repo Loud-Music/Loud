@@ -45,6 +45,7 @@ export function sameRecording(wanted: Track, candidate: Track) {
   );
 }
 interface StreamDependencies {
+  metadataOnly?: boolean;
   resolve: (track: Track) => Promise<Track>;
   discover: (track: Track) => Promise<Track[]>;
   discoverPrimary?: (track: Track) => Promise<Track[]>;
@@ -118,7 +119,12 @@ export function chooseStream(
     timers.add(deadline);
     const drain = () => {
       if (settled) return;
-      if (best && (best.format === "FLAC" || releaseFallback))
+      if (
+        best &&
+        (best.format === "FLAC" ||
+          (dependencies.metadataOnly && sourcePriority(best) === 0) ||
+          releaseFallback)
+      )
         return finish(best);
       queue.sort((a, b) => sourcePriority(a) - sourcePriority(b));
       while (running < 4 && queue.length) {
@@ -194,13 +200,16 @@ export function chooseStream(
       setTimeout(() => {
         releaseSecondary = true;
         drain();
-      }, 1800),
+      }, 300),
     );
     timers.add(
-      setTimeout(() => {
-        releaseFallback = true;
-        drain();
-      }, 1200),
+      setTimeout(
+        () => {
+          releaseFallback = true;
+          drain();
+        },
+        dependencies.metadataOnly ? 4000 : 500,
+      ),
     );
     drain();
     if (dependencies.discoverPrimary)

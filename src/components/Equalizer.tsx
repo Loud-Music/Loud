@@ -1,3 +1,7 @@
+import SelectField from "./SelectField";
+import RangeField from "./RangeField";
+import { Switch } from "@animate-ui/react/primitives/radix-ui/switch";
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import {
   eqFrequencies,
   eqPresets,
@@ -16,29 +20,31 @@ export default function Equalizer({
         <div>
           <h3>Эквалайзер</h3>
         </div>
-        <button
+        <Switch.Root
           type="button"
-          role="switch"
+
           aria-label="Эквалайзер"
-          aria-checked={value.enabled}
+          checked={value.enabled}
           className="prefs-switch"
-          onClick={() => onChange({ ...value, enabled: !value.enabled })}
+          onCheckedChange={() =>
+            onChange({ ...value, enabled: !value.enabled })
+          }
         >
-          <span />
-        </button>
+          <Switch.Thumb />
+        </Switch.Root>
       </div>
       <div className="prefs-group-body eq-body">
         <div className="eq-toolbar">
           <label htmlFor="equalizer-preset">Пресет</label>
-          <select
+          <SelectField
             id="equalizer-preset"
             value={value.preset}
-            onChange={(e) => {
-              const preset = eqPresets[e.target.value];
+            onValueChange={(value) => {
+              const preset = eqPresets[value];
               if (preset)
                 onChange({
                   enabled: true,
-                  preset: e.target.value,
+                  preset: value,
                   gains: [...preset.gains],
                 });
             }}
@@ -51,8 +57,8 @@ export default function Equalizer({
             <option value="custom" disabled>
               Свой
             </option>
-          </select>
-          <button
+          </SelectField>
+          <Button
             className="prefs-button"
             onClick={() =>
               onChange({
@@ -63,7 +69,7 @@ export default function Equalizer({
             }
           >
             Сбросить
-          </button>
+          </Button>
         </div>
         <div className={`eq-bands ${value.enabled ? "" : "is-bypassed"}`}>
           <div className="eq-scale" aria-hidden="true">
@@ -77,17 +83,18 @@ export default function Equalizer({
                 {value.gains[index] > 0 ? "+" : ""}
                 {value.gains[index]}
               </output>
-              <input
-                type="range"
+              <RangeField
+                orientation="vertical"
+
                 min={-12}
                 max={12}
                 step={1}
                 value={value.gains[index]}
                 aria-label={`Эквалайзер ${frequency} Гц`}
                 aria-valuetext={`${value.gains[index]} дБ`}
-                onChange={(e) => {
+                onValueChange={(gain) => {
                   const gains = [...value.gains];
-                  gains[index] = Number(e.target.value);
+                  gains[index] = gain;
                   onChange({ enabled: true, preset: "custom", gains });
                 }}
               />

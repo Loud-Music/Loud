@@ -157,7 +157,7 @@ const queuedPrefetch = new Map<string, Track>();
 let intentTimer: ReturnType<typeof setTimeout>;
 export function prepareAudio(track: Track) {
   clearTimeout(intentTimer);
-  intentTimer = setTimeout(() => prefetchAudio(track), 120);
+  intentTimer = setTimeout(() => prefetchAudio(track), 60);
 }
 export function cancelAudioPreparation() {
   clearTimeout(intentTimer);
@@ -217,6 +217,24 @@ export async function resolveExtracted(
   if (!("__TAURI_INTERNALS__" in window))
     throw new Error("Полные треки доступны в приложении Loud для компьютера.");
   playbackLog("resolve-start", track, { streaming, excluded: excluded.length });
+  const warmKey = `${audioCacheIdentity(track)}:${Math.round(track.duration)}`;
+  const warmed =
+    streaming && !excluded.length ? streamJobs.get(warmKey) : undefined;
+  if (warmed && Date.now() < warmed.expires) {
+    if (prepared) {
+      warmed.listeners.add(prepared);
+      if (warmed.prepared) prepared(warmed.prepared);
+    }
+    try {
+      return {
+        ...(await warmed.promise),
+        id: track.id,
+        inLibrary: track.inLibrary,
+      };
+    } finally {
+      if (prepared) warmed.listeners.delete(prepared);
+    }
+  }
   const cached = await invoke<AudioFile | null>("extractor_cached", {
     recording: audioCacheIdentity(track),
     duration: track.duration,
@@ -534,10 +552,42 @@ async function queryLucida(
 }
 
 const lucidaUnavailableUntil = new Map<string, number>();
+export interface OfflineSource {
+  path?: string;
+  url?: string;
+  hls?: boolean;
+  serviceUrl?: string;
+}
+export async function prepareOfflineSource(
+  track: Track,
+  skipCache = false,
+): Promise<OfflineSource> {
+  if (!("__TAURI_INTERNALS__" in window))
+    throw new Error("Офлайн-загрузка доступна в приложении LOUD.");
+  const cached = await invoke<AudioFile | null>("extractor_cached", {
+    recording: audioCacheIdentity(track),
+    duration: track.duration,
+    urls: [track.extractorUrl, track.remoteUrl].filter(Boolean),
+  });
+  if (!skipCache && cached?.path) return { path: cached.path };
+  if (!skipCache && track.offlinePath) return { path: track.offlinePath };
+  if (track.remoteUrl && !track.extractorUrl) {
+    if (track.downloadAllowed === false)
+      throw new Error("Автор отключил скачивание этой записи.");
+    return { url: track.remoteUrl };
+  }
+  const resolved = await resolveStreaming(track, [], undefined, true);
+  return {
+    url: resolved.streamCacheUrl || resolved.src,
+    hls: !!resolved.streamType,
+    serviceUrl: resolved.playbackSource || resolved.extractorUrl,
+  };
+}
 async function resolveStreaming(
   track: Track,
   excluded: readonly string[],
   prepared?: (track: Track) => void,
+  metadataOnly = false,
 ): Promise<Track> {
   if ((track.artists?.length || 0) < 2 && /^deezer:\d+$/.test(track.id)) {
     track = { ...track };
@@ -574,6 +624,7 @@ async function resolveStreaming(
           duration: candidate.duration,
           recording: audioCacheIdentity(track),
           ...(direct ? { directOnly: true } : {}),
+          ...(metadataOnly ? { prepareOnly: true } : {}),
         }),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
@@ -621,10 +672,13 @@ async function resolveStreaming(
     track,
     {
       resolve: resolveCandidate,
+      metadataOnly,
       prepared,
-      warmPrimary: (candidate) => {
-        void resolveCandidate(candidate).catch(() => {});
-      },
+      warmPrimary: metadataOnly
+        ? undefined
+        : (candidate) => {
+            void resolveCandidate(candidate).catch(() => {});
+          },
       discoverPrimary: async (wanted) => {
         const started = performance.now();
         try {

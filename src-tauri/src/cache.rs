@@ -164,7 +164,8 @@ fn manage(root: &Path, clear: bool, target: Option<u64>) -> Result<CacheStatus, 
         .iter()
         .filter(|file| saved.contains(&file.key))
         .map(|file| file.size)
-        .sum();
+        .sum::<u64>()
+        + crate::offline::size();
     files.retain(|file| !saved.contains(&file.key));
     let limit_bytes = target.unwrap_or_else(|| limit(root));
     let (pin, leases) = {

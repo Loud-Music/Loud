@@ -1,6 +1,7 @@
 import { catalogJSON } from "./catalogRequest";
 import { artistKey, releaseTracks, type ArtistRelease } from "./artists";
 import type { Track } from "./library";
+import { offlineAlbum } from "./offlineStore";
 
 export interface AlbumSeed extends ArtistRelease {
   artistName: string;
@@ -23,6 +24,8 @@ export function parseAlbumRoute(value: string): AlbumSeed {
   return { id: `local:${value}`, title: value, artistName: "" };
 }
 export async function loadAlbum(seed: AlbumSeed, saved: Track[]) {
+  const offline = offlineAlbum(seed, saved);
+  if (offline) return offline;
   if (String(seed.id).startsWith("apple:")) {
     const tracks = await releaseTracks(seed);
     if (!tracks.length)

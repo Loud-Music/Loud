@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { Fragment } from "react";
 import { trackArtists, type Track } from "../lib/library";
 export default function ArtistNames({
@@ -12,13 +13,13 @@ export default function ArtistNames({
       {trackArtists(track).map((name, index) => (
         <Fragment key={name}>
           {index > 0 && ", "}
-          <button
+          <Button
             className="artist-text-link"
             aria-label={`Открыть артиста ${name}`}
             onClick={() => onOpen(name)}
           >
             {name}
-          </button>
+          </Button>
         </Fragment>
       ))}
     </>

@@ -1,3 +1,4 @@
+import RangeField from "./RangeField";
 import { Button } from "@animate-ui/react/primitives/buttons/button";
 import type { Dispatch, SetStateAction } from "react";
 import {
@@ -5,16 +6,16 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  LoaderCircle,
+  Spinner,
   Pause,
   Play,
-  Repeat2,
-  VolumeX,
-  Volume1,
-  Volume2,
-  MessageSquareText,
-  ListMusic,
-} from "lucide-react";
+  Repeat,
+  VolumeOff,
+  VolumeLow,
+  VolumeHigh,
+  Lyrics,
+  Queue,
+} from "../icons";
 import { time, type Track } from "../lib/library";
 import type usePlayback from "../lib/usePlayback";
 import IconButton from "./IconButton";
@@ -89,13 +90,13 @@ export default function Player({
       }
     >
       <div className="now-playing">
-        <button
+        <Button
           className="now-cover"
           onClick={() => openAlbum(current)}
           aria-label="Открыть текущий альбом"
         >
           <img src={current.cover} alt="Обложка текущего альбома" />
-        </button>
+        </Button>
         <div className="now-info" key={current.id}>
           <strong>{current.title}</strong>
           <span className="now-artist">
@@ -131,7 +132,7 @@ export default function Player({
             onClick={togglePlay}
           >
             {audioLoading ? (
-              <LoaderCircle className="spin" size={20} />
+              <Spinner className="spin" size={20} />
             ) : playing ? (
               <Pause size={20} fill="currentColor" />
             ) : (
@@ -144,7 +145,7 @@ export default function Player({
             onClick={() => advance(1)}
           />
           <IconButton
-            icon={Repeat2}
+            icon={Repeat}
             label="Повторять очередь"
             active={repeat}
             onClick={() => setRepeat((r) => !r)}
@@ -152,7 +153,7 @@ export default function Player({
         </div>
       </div>
       <div className="player-right">
-        <button
+        <Button
           className={`output-indicator ${output.exclusive ? "exclusive-active" : ""}`}
           onClick={() => {
             onSettings();
@@ -171,15 +172,17 @@ export default function Player({
             : exclusive
               ? "Эксклюзивный"
               : playbackFormat || current.format || "Системный"}
-        </button>
+        </Button>
         <div className="volume-control">
           <IconButton
-            icon={volume === 0 ? VolumeX : volume < 0.5 ? Volume1 : Volume2}
+            icon={
+              volume === 0 ? VolumeOff : volume < 0.5 ? VolumeLow : VolumeHigh
+            }
             label={volume === 0 ? "Включить звук" : "Выключить звук"}
             disabled={exclusive}
             onClick={() => setVolume((v) => (v === 0 ? 0.65 : 0))}
           />
-          <input
+          <RangeField
             aria-label="Громкость"
             disabled={exclusive}
             title={
@@ -187,7 +190,7 @@ export default function Player({
                 ? "В эксклюзивном режиме регулируйте громкость на ЦАП или усилителе"
                 : "Громкость"
             }
-            type="range"
+
             min="0"
             max="1"
             step="0.01"
@@ -197,11 +200,11 @@ export default function Player({
                 "--range-progress": `${volume * 100}%`,
               } as React.CSSProperties
             }
-            onChange={(e) => setVolume(Number(e.target.value))}
+            onValueChange={(value) => setVolume(Number(value))}
           />
         </div>
         <IconButton
-          icon={MessageSquareText}
+          icon={Lyrics}
           label="Текст песни"
           active={lyricsOpen}
           onClick={() => {
@@ -211,7 +214,7 @@ export default function Player({
         />
         <span className="player-divider" />
         <IconButton
-          icon={ListMusic}
+          icon={Queue}
           label="Очередь воспроизведения"
           active={queueOpen}
           onClick={() => {
@@ -222,8 +225,7 @@ export default function Player({
       </div>
       <div className="seek-bar">
         <span>{time(progress)}</span>
-        <input
-          type="range"
+        <RangeField
           aria-label="Позиция воспроизведения"
           min={0}
           max={duration || 1}
@@ -234,7 +236,7 @@ export default function Player({
               "--range-progress": `${duration ? (progress / duration) * 100 : 0}%`,
             } as React.CSSProperties
           }
-          onChange={(e) => seek(Number(e.target.value))}
+          onValueChange={(value) => seek(Number(value))}
         />
         <span>{time(duration)}</span>
       </div>

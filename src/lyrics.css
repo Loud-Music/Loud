@@ -1,0 +1,133 @@
+.lyrics-panel {
+  position: absolute;
+  inset: 48px 0 0;
+  width: auto;
+  max-width: none;
+  z-index: 24;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  border: 0;
+  box-shadow: none;
+  animation: none;
+  padding-bottom: 104px;
+}
+.lyrics-panel::before {
+  content: "";
+  position: absolute;
+  inset: -80px;
+  z-index: -1;
+  background: var(--lyrics-art) center / cover;
+  filter: blur(70px) saturate(0.7);
+  opacity: 0.14;
+  pointer-events: none;
+}
+.lyrics-panel > header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 16px clamp(24px, 3vw, 56px) 0;
+}
+.lyrics-panel h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+}
+.lyrics-panel > header > div {
+  flex: 1;
+}
+.lyrics-panel > header .icon-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--control);
+}
+.lyrics-stage {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.4fr);
+  gap: clamp(24px, 5vw, 104px);
+  flex: 1;
+  min-height: 0;
+  padding: 0 clamp(24px, 5vw, 104px);
+}
+.lyrics-recording {
+  align-self: center;
+  width: 100%;
+  max-width: 420px;
+  justify-self: center;
+  padding-bottom: 24px;
+}
+.lyrics-recording > img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 18px;
+  box-shadow: 0 24px 64px #0003;
+}
+.lyrics-recording h3 {
+  font-size: clamp(22px, 2vw, 32px);
+  line-height: 1.15;
+  letter-spacing: -0.5px;
+  margin: 24px 0 8px;
+  overflow-wrap: anywhere;
+}
+.lyrics-recording p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 16px;
+}
+.lyrics-panel .lyrics-scroll {
+  min-height: 0;
+  padding: 0 18px 0 6px;
+}
+.lyrics-panel .lyrics-lines {
+  padding: min(18vh, 150px) 0 min(32vh, 300px);
+}
+.lyrics-panel .lyrics-lines button {
+  font-size: clamp(28px, 3vw, 46px);
+  font-weight: 650;
+  line-height: 1.25;
+  padding-block: 16px;
+}
+.lyrics-panel .lyrics-plain {
+  font-size: clamp(25px, 2.5vw, 38px);
+  padding-block: 64px;
+}
+.lyrics-panel .lyrics-empty {
+  min-height: 100%;
+}
+@media (max-width: 900px), (max-height: 560px) {
+  .lyrics-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    padding-inline: 24px;
+  }
+  .lyrics-recording {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    max-width: none;
+    padding: 8px 0;
+  }
+  .lyrics-recording > img {
+    width: 64px;
+    border-radius: 10px;
+  }
+  .lyrics-recording h3 {
+    margin: 0 0 4px;
+    font-size: 20px;
+  }
+  .lyrics-recording p {
+    font-size: 13px;
+  }
+  .lyrics-panel .lyrics-lines {
+    padding-top: 40px;
+  }
+}

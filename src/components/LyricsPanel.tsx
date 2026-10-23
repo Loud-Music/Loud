@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import {
   useEffect,
   useRef,
@@ -8,7 +9,7 @@ import {
   type RefObject,
   type CSSProperties,
 } from "react";
-import { LoaderCircle, RotateCw, X } from "lucide-react";
+import { Spinner, Refresh, X } from "../icons";
 import type { Track } from "../lib/library";
 import { loadLyrics, loadKaraoke, parseLyrics } from "../lib/lyrics";
 import { clearCatalogCache } from "../lib/catalogRequest";
@@ -32,15 +33,25 @@ const LyricRow = memo(function LyricRow({
   clock: number;
   onSeek: (time: number) => void;
 }) {
+  const words = useMemo(() => {
+    let space = true;
+    return line.words?.flatMap((word) => {
+      let text = word.text.replace(/\s+/g, " ");
+      if (space) text = text.trimStart();
+      if (!text) return [];
+      space = /\s$/.test(text);
+      return [{ ...word, text }];
+    });
+  }, [line.words]);
   return (
-    <button
+    <Button
       aria-label={line.text}
       aria-current={current ? "true" : undefined}
       className={`${current ? "active" : past ? "past" : ""} ${near ? "near" : ""}`}
       onClick={() => onSeek(line.time)}
     >
-      {line.words?.length
-        ? line.words.map((word, index) => {
+      {words?.length
+        ? words.map((word, index) => {
             const fill = Math.max(
               0,
               Math.min(
@@ -75,7 +86,7 @@ const LyricRow = memo(function LyricRow({
             );
           })
         : line.text}
-    </button>
+    </Button>
   );
 });
 
@@ -110,6 +121,20 @@ export default function LyricsPanel({
     return () => window.removeEventListener("loud-lyrics-configured", refresh);
   }, []);
   const scroll = useRef<HTMLDivElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    closeButton.current?.focus();
+    return () => {
+      if (
+        previous instanceof HTMLElement &&
+        previous.isConnected &&
+        (document.activeElement === document.body ||
+          document.activeElement?.closest(".lyrics-panel"))
+      )
+        previous.focus();
+    };
+  }, []);
   const lines = useMemo(
     () =>
       result?.lines ||
@@ -282,96 +307,123 @@ export default function LyricsPanel({
   };
   const hasWords = lines.some((line) => line.words?.length);
   return (
-    <aside className="lyrics-panel" aria-label="Текст песни">
+    <section
+      className="lyrics-panel"
+      aria-label="Текст песни"
+      style={
+        {
+          "--lyrics-art": `url(${JSON.stringify(track.cover)})`,
+        } as CSSProperties
+      }
+    >
       <header>
         <div>
           <h2>Текст песни</h2>
-          <p>
-            {track.id ? `${track.title} · ${track.artist}` : "Выберите песню"}
-          </p>
         </div>
         {!hasWords &&
           !wordLoading &&
           !loading &&
           (wordError || error || lines.length > 0) && (
-            <button
+            <Button
               className="icon-button"
               aria-label="Повторить загрузку текста"
               onClick={() => void retry()}
             >
-              <RotateCw size={16} />
-            </button>
+              <Refresh size={16} />
+            </Button>
           )}
-        <button
+        <Button
+          ref={closeButton}
           className="icon-button"
           aria-label="Закрыть текст песни"
           onClick={close}
         >
           <X size={19} />
-        </button>
+        </Button>
       </header>
-      <div
-        className="lyrics-scroll"
-        ref={scroll}
-        onWheel={() => {
-          manualScrollUntil.current = performance.now() + 3000;
-        }}
-        onTouchMove={() => {
-          manualScrollUntil.current = performance.now() + 3000;
-        }}
-      >
-        {loading || (!result && wordLoading) ? (
-          <div className="lyrics-empty">
-            <LoaderCircle className="spin" size={24} />
-            <p>Загружаем текст…</p>
+      <div className="lyrics-stage">
+        <div className="lyrics-recording">
+          <img
+            key={track.cover}
+            src={track.cover}
+            alt={track.id ? `Обложка ${track.album || track.title}` : "LOUD"}
+            onError={(event) => {
+              event.currentTarget.onerror = null;
+              event.currentTarget.src = "/covers/imported.svg";
+            }}
+          />
+          <div>
+            <h3>{track.title}</h3>
+            <p>{track.artist || "Выберите песню в медиатеке"}</p>
           </div>
-        ) : error && !wordLoading ? (
-          <div className="lyrics-empty">
-            <p role="alert">{error}</p>
-            <button className="button" onClick={retry}>
-              <RotateCw size={16} /> Повторить
-            </button>
-          </div>
-        ) : result?.instrumental ? (
-          <div className="lyrics-empty">
-            <p>Инструментальная композиция</p>
-          </div>
-        ) : lines.length ? (
-          <div className="lyrics-lines">
-            {lines.map((line, i) => {
-              const end =
-                line.end ??
-                line.words?.at(-1)?.end ??
-                lines[i + 1]?.time ??
-                track.duration;
-              const time =
-                clock < line.time ? -Infinity : clock > end ? Infinity : clock;
-              return (
-                <LyricRow
-                  key={`${line.time}:${i}`}
-                  line={line}
-                  current={i === active}
-                  past={i < active}
-                  near={Math.abs(i - active) <= 1}
-                  playing={playing && i === active}
-                  clock={time}
-                  onSeek={jump}
-                />
-              );
-            })}
-          </div>
-        ) : result?.plainLyrics ? (
-          <p className="lyrics-plain">{result.plainLyrics}</p>
-        ) : (
-          <div className="lyrics-empty">
-            <p>
-              {track.id
-                ? "Текст этой песни пока не найден."
-                : "Включите трек, чтобы увидеть текст."}
-            </p>
-          </div>
-        )}
+        </div>
+        <div
+          className="lyrics-scroll"
+          ref={scroll}
+          onWheel={() => {
+            manualScrollUntil.current = performance.now() + 3000;
+          }}
+          onTouchMove={() => {
+            manualScrollUntil.current = performance.now() + 3000;
+          }}
+        >
+          {loading || (!result && wordLoading) ? (
+            <div className="lyrics-empty">
+              <Spinner className="spin" size={24} />
+              <p>Загружаем текст…</p>
+            </div>
+          ) : error && !wordLoading ? (
+            <div className="lyrics-empty">
+              <p role="alert">{error}</p>
+              <Button className="button" onClick={retry}>
+                <Refresh size={16} /> Повторить
+              </Button>
+            </div>
+          ) : result?.instrumental ? (
+            <div className="lyrics-empty">
+              <p>Инструментальная композиция</p>
+            </div>
+          ) : lines.length ? (
+            <div className="lyrics-lines">
+              {lines.map((line, i) => {
+                const end =
+                  line.end ??
+                  line.words?.at(-1)?.end ??
+                  lines[i + 1]?.time ??
+                  track.duration;
+                const time =
+                  clock < line.time
+                    ? -Infinity
+                    : clock > end
+                      ? Infinity
+                      : clock;
+                return (
+                  <LyricRow
+                    key={`${line.time}:${i}`}
+                    line={line}
+                    current={i === active}
+                    past={i < active}
+                    near={Math.abs(i - active) <= 1}
+                    playing={playing && i === active}
+                    clock={time}
+                    onSeek={jump}
+                  />
+                );
+              })}
+            </div>
+          ) : result?.plainLyrics ? (
+            <p className="lyrics-plain">{result.plainLyrics}</p>
+          ) : (
+            <div className="lyrics-empty">
+              <p>
+                {track.id
+                  ? "Текст этой песни пока не найден."
+                  : "Включите трек, чтобы увидеть текст."}
+              </p>
+            </div>
+          )}
+        </div>
       </div>
-    </aside>
+    </section>
   );
 }

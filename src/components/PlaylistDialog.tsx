@@ -1,5 +1,6 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import type { FormEvent } from "react";
-import { Plus } from "lucide-react";
+import { Plus } from "../icons";
 import Dialog from "./Dialog";
 type Props = {
   busy: boolean;
@@ -31,13 +32,13 @@ export default function PlaylistDialog({
           value={playlistName}
           onChange={(e) => onName(e.target.value)}
         />
-        <button
+        <Button
           type="submit"
           className="button button-accent full-width"
           disabled={!playlistName.trim()}
         >
           <Plus size={16} /> Создать плейлист
-        </button>
+        </Button>
       </form>
     </Dialog>
   );

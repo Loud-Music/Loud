@@ -15,6 +15,14 @@ interface GaplessSegment {
 export async function prepareGapless(track: Track): Promise<GaplessResource> {
   if (!track.src || track.streamType || !("__TAURI_INTERNALS__" in window))
     throw new Error("Gapless source is not ready");
+  const mime =
+    track.format === "FLAC"
+      ? 'audio/mp4; codecs="flac"'
+      : track.format === "AAC"
+        ? 'audio/mp4; codecs="mp4a.40.2"'
+        : 'audio/mp4; codecs="mp4a.6B"';
+  if (!MediaSource.isTypeSupported(mime))
+    throw new Error("Gapless codec is unavailable");
   const url = new URL(track.src);
   const path =
     url.protocol === "asset:" && url.hostname === "localhost"

@@ -1,3 +1,4 @@
+import { AnimateUIProvider } from "@animate-ui/react/provider";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { initializePersistence, flushPersistence } from "./lib/persistence";
@@ -6,6 +7,9 @@ import "./styles.css";
 import "./artist.css";
 import "./layout.css";
 import "./wave.css";
+import "./controls.css";
+import "./sidebar.css";
+import "./lyrics.css";
 
 document.documentElement.dataset.platform =
   "__TAURI_INTERNALS__" in window ? "desktop" : "web";
@@ -31,7 +35,9 @@ async function boot() {
     const { default: AccountGate } = await import("./components/AccountGate");
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
-        <AccountGate />
+        <AnimateUIProvider tempo={0.85}>
+          <AccountGate />
+        </AnimateUIProvider>
       </React.StrictMode>,
     );
     if ("__TAURI_INTERNALS__" in window) {

@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { prepareLyrics, useLyricsPrefetch } from "../lib/lyricsPrefetch";
 import { cancelAudioPreparation, prepareAudio } from "../lib/extractor";
 import { useEffect, useState } from "react";
@@ -5,16 +6,18 @@ import {
   ArrowLeft,
   Check,
   ChevronRight,
-  LoaderCircle,
-  Music2,
+  Spinner,
+  Music,
   Play,
   Plus,
-  RotateCw,
+  Refresh,
   Shuffle,
-} from "lucide-react";
+  Waveform,
+} from "../icons";
 import {
   artistKey,
   artistProfile,
+  cachedArtistProfile,
   artistReleases,
   isArtist,
   releaseTracks,
@@ -23,6 +26,7 @@ import {
 import { recordingKey, time, type Track } from "../lib/library";
 import ArtistCard from "./ArtistCard";
 import { appleArtistImage } from "../lib/appleCatalog";
+import { artistPortrait } from "../lib/artistPortrait";
 
 export default function ArtistProfile({
   name,
@@ -60,13 +64,19 @@ export default function ArtistProfile({
   const [albumError, setAlbumError] = useState("");
   const [saving, setSaving] = useState<string>();
   const [paging, setPaging] = useState(false);
+  const [portrait, setPortrait] = useState<string>();
+  const [photoFailed, setPhotoFailed] = useState(false);
   const local = saved.filter((track) => isArtist(track, name));
   useEffect(() => {
     let live = true;
-    setLoading(true);
+    const cached = cachedArtistProfile(name);
+    setLoading(!cached);
     setError("");
-    setProfile(undefined);
-    void artistProfile(name)
+    setProfile(cached);
+    setMoreSongs(false);
+    setFilter("all");
+    setSelected(undefined);
+    void artistProfile(name, revision > 0)
       .then((value) => {
         if (live) {
           setProfile(value);
@@ -85,6 +95,17 @@ export default function ArtistProfile({
       .finally(() => {
         if (live) setLoading(false);
       });
+    return () => {
+      live = false;
+    };
+  }, [name, revision]);
+  useEffect(() => {
+    let live = true;
+    setPortrait(undefined);
+    setPhotoFailed(false);
+    void artistPortrait(name, undefined, revision > 0).then((image) => {
+      if (live) setPortrait(image);
+    });
     return () => {
       live = false;
     };
@@ -131,9 +152,7 @@ export default function ArtistProfile({
     };
   }, [selected]);
   const artist = profile?.artist;
-  const songs = profile?.songs.length
-    ? profile.songs
-    : local.filter((track) => track.src);
+  const songs = profile?.songs.length ? profile.songs : local;
   const localReleases: ArtistRelease[] = [
     ...new Set(local.map((track) => track.album)),
   ].map((album) => ({
@@ -159,7 +178,9 @@ export default function ArtistProfile({
         ? profile.songs
         : local,
   );
-  const cover = artist?.picture_xl || artist?.picture_big;
+  const cover = !photoFailed
+    ? artist?.picture_xl || artist?.picture_big || portrait
+    : undefined;
   const playList = (track: Track, items: Track[]) => {
     const resolved = items.map(
       (item) =>
@@ -204,14 +225,20 @@ export default function ArtistProfile({
             onBlur={cancelAudioPreparation}
             className={`artist-song ${currentId === track.id ? "is-current" : ""}`}
           >
-            <button
+            <Button
               className="artist-song-index"
               aria-label={`Слушать ${track.title}`}
               onClick={() => playList(stored || track, items)}
             >
-              <span>{currentId === track.id && playing ? "♫" : index + 1}</span>
+              <span>
+                {currentId === track.id && playing ? (
+                  <Waveform size={15} />
+                ) : (
+                  index + 1
+                )}
+              </span>
               <Play size={15} fill="currentColor" />
-            </button>
+            </Button>
             <img
               src={track.cover}
               alt=""
@@ -221,33 +248,33 @@ export default function ArtistProfile({
               }}
             />
             <div className="artist-song-title">
-              <button onClick={() => playList(stored || track, items)}>
+              <Button onClick={() => playList(stored || track, items)}>
                 {track.title}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="artist-text-link"
                 aria-label={`Открыть артиста ${track.artist}`}
                 onClick={() => onArtist(track.artist)}
               >
                 {track.artist}
-              </button>
+              </Button>
             </div>
             <span className="artist-song-album">{track.album}</span>
             <span className="artist-song-duration">{time(track.duration)}</span>
-            <button
+            <Button
               className="icon-button"
               aria-label={`Добавить ${track.title} в медиатеку`}
               disabled={!!stored || !!saving}
               onClick={() => void add(track)}
             >
               {saving === track.id ? (
-                <LoaderCircle size={16} className="spin" />
+                <Spinner size={16} className="spin" />
               ) : stored ? (
                 <Check size={16} />
               ) : (
                 <Plus size={16} />
               )}
-            </button>
+            </Button>
           </div>
         );
       })}
@@ -284,17 +311,11 @@ export default function ArtistProfile({
     }
   };
   return (
-    <article className="artist-page" aria-label={`Artist profile ${name}`}>
+    <article className="artist-page" aria-label={`Профиль артиста ${name}`}>
       <header className={`artist-hero ${loading ? "is-loading" : ""}`}>
         {cover && (
           <div className="artist-hero-photo">
-            <img
-              src={cover}
-              alt={name}
-              onError={(event) => {
-                event.currentTarget.style.opacity = "0";
-              }}
-            />
+            <img src={cover} alt={name} onError={() => setPhotoFailed(true)} />
           </div>
         )}
         <div className="artist-hero-copy">
@@ -302,21 +323,21 @@ export default function ArtistProfile({
           <h1>{artist?.name || name}</h1>
           <p>
             {local.length
-              ? `${local.length} ${local.length === 1 ? "трек" : "треков"} в медиатеке`
+              ? `${local.length} ${local.length % 10 === 1 && local.length % 100 !== 11 ? "трек" : local.length % 10 >= 2 && local.length % 10 <= 4 && !(local.length % 100 >= 12 && local.length % 100 <= 14) ? "трека" : "треков"} в медиатеке`
               : "Музыка и релизы"}
           </p>
         </div>
       </header>
       <div className="artist-actions">
-        <button
+        <Button
           className="button button-accent"
           disabled={!songs.length}
           onClick={() => playList(songs[0], songs)}
         >
           <Play size={17} fill="currentColor" />
           Слушать
-        </button>
-        <button
+        </Button>
+        <Button
           className="button button-subtle"
           disabled={!songs.length}
           onClick={() => {
@@ -330,31 +351,31 @@ export default function ArtistProfile({
         >
           <Shuffle size={17} />
           Перемешать
-        </button>
-        <button
+        </Button>
+        <Button
           className={`artist-follow ${followed ? "is-followed" : ""}`}
           aria-pressed={followed}
           onClick={onFollow}
         >
           {followed ? <Check size={16} /> : <Plus size={16} />}
           {followed ? "Вы подписаны" : "Подписаться"}
-        </button>
+        </Button>
       </div>
       {(error || profile?.partial) && (
         <div className="artist-notice" role="status">
           <span>{error || "Часть каталога сейчас недоступна."}</span>
-          <button
+          <Button
             className="text-button"
             onClick={() => setRevision((value) => value + 1)}
           >
-            <RotateCw size={13} />
+            <Refresh size={13} />
             Повторить
-          </button>
+          </Button>
         </div>
       )}
       {loading && (
         <div className="artist-loading" role="status">
-          <LoaderCircle size={18} className="spin" />
+          <Spinner size={18} className="spin" />
           Загружаем музыку артиста…
         </div>
       )}
@@ -363,13 +384,13 @@ export default function ArtistProfile({
           className="artist-release-detail"
           aria-label={`Release ${selected.title}`}
         >
-          <button
+          <Button
             className="artist-back"
             onClick={() => setSelected(undefined)}
           >
             <ArrowLeft size={16} />
             Все релизы
-          </button>
+          </Button>
           <header>
             <img
               src={
@@ -394,30 +415,30 @@ export default function ArtistProfile({
                   ? ` · ${selected.release_date.slice(0, 4)}`
                   : ""}
               </p>
-              <button
+              <Button
                 className="button button-accent"
                 disabled={!albumSongs.length}
                 onClick={() => playList(albumSongs[0], albumSongs)}
               >
                 <Play size={15} fill="currentColor" />
                 Слушать релиз
-              </button>
+              </Button>
             </div>
           </header>
           {albumLoading ? (
             <p className="artist-loading" role="status">
-              <LoaderCircle size={17} className="spin" />
+              <Spinner size={17} className="spin" />
               Загружаем треки…
             </p>
           ) : albumError ? (
             <div className="artist-notice">
               <span>{albumError}</span>
-              <button
+              <Button
                 className="text-button"
                 onClick={() => setSelected({ ...selected })}
               >
                 Повторить
-              </button>
+              </Button>
             </div>
           ) : albumSongs.length ? (
             list(albumSongs)
@@ -436,13 +457,13 @@ export default function ArtistProfile({
               </div>
               {list(moreSongs ? songs : songs.slice(0, 5))}
               {songs.length > 5 && (
-                <button
+                <Button
                   className="artist-more"
                   onClick={() => setMoreSongs((value) => !value)}
                 >
                   {moreSongs ? "Свернуть" : "Показать все"}
                   <ChevronRight size={14} />
-                </button>
+                </Button>
               )}
             </section>
           )}
@@ -456,21 +477,21 @@ export default function ArtistProfile({
                     ["album", "Альбомы"],
                     ["single", "Синглы и EP"],
                   ].map(([value, label]) => (
-                    <button
+                    <Button
                       key={value}
                       className={filter === value ? "selected" : ""}
                       aria-pressed={filter === value}
                       onClick={() => setFilter(value)}
                     >
                       {label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
               {filtered.length ? (
                 <div className="artist-release-grid">
                   {filtered.map((release) => (
-                    <button
+                    <Button
                       className="artist-release-card"
                       key={release.id}
                       aria-label={`Открыть релиз ${release.title}`}
@@ -510,21 +531,21 @@ export default function ArtistProfile({
                           .filter(Boolean)
                           .join(" · ")}
                       </small>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               ) : (
                 <p className="artist-empty">Релизы пока не найдены.</p>
               )}
               {profile?.more && (
-                <button
+                <Button
                   className="artist-more"
                   disabled={paging}
                   onClick={() => void moreReleases()}
                 >
                   {paging ? "Загружаем…" : "Больше релизов"}
                   <ChevronRight size={14} />
-                </button>
+                </Button>
               )}
             </section>
           )}
@@ -549,7 +570,7 @@ export default function ArtistProfile({
           )}
           {!loading && !songs.length && !releases.length && (
             <div className="artist-empty">
-              <Music2 size={28} />
+              <Music size={28} />
               <p>Музыка этого артиста пока не найдена.</p>
             </div>
           )}

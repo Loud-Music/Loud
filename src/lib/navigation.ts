@@ -6,6 +6,7 @@ export type View =
   | "Albums"
   | "Artists"
   | "Favorites"
+  | "Downloads"
   | `playlist:${string}`
   | `album:${string}`
   | `artist:${string}`
@@ -19,5 +20,6 @@ const labels: Record<string, string> = {
   Albums: "Альбомы",
   Artists: "Артисты",
   Favorites: "Избранное",
+  Downloads: "Загрузки",
 };
 export const viewLabel = (view: View) => labels[view] || view;

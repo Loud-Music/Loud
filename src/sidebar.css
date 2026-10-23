@@ -1,0 +1,105 @@
+.app-shell {
+  --sidebar-width: 192px;
+  --sidebar-width-icon: 68px;
+}
+.sidebar-shell {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1 / -1;
+  min-height: 0;
+}
+.sidebar-gap {
+  height: 100%;
+  width: var(--sidebar-width);
+}
+.sidebar-container {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--sidebar-width);
+  height: 100%;
+}
+.sidebar-container > .sidebar {
+  height: 100%;
+}
+.sidebar-shell[data-state="collapsed"] .sidebar-gap,
+.sidebar-shell[data-state="collapsed"] .sidebar-container {
+  width: var(--sidebar-width-icon);
+}
+.sidebar-menu-item {
+  position: relative;
+}
+.sidebar-menu-item > button {
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+.sidebar-menu-item [data-slot="trigger-highlight"] {
+  border-radius: 6px;
+}
+.brand-symbol {
+  display: none;
+}
+.sidebar-shell[data-state="collapsed"] .brand {
+  margin: 12px auto 27px;
+  padding: 0;
+}
+.sidebar-shell[data-state="collapsed"] .brand-wordmark,
+.sidebar-shell[data-state="collapsed"] .nav-item > span,
+.sidebar-shell[data-state="collapsed"] .nav-heading,
+.sidebar-shell[data-state="collapsed"] .profile > span:last-of-type,
+.sidebar-shell[data-state="collapsed"] .playlist-nav {
+  display: none;
+}
+.sidebar-shell[data-state="collapsed"] .brand-symbol {
+  display: block;
+}
+.sidebar-shell[data-state="collapsed"] .nav-item {
+  justify-content: center;
+  font-size: 0;
+}
+.sidebar-shell[data-state="collapsed"] .profile {
+  justify-content: center;
+  padding-inline: 0;
+}
+.sidebar-tooltip {
+  padding: 7px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 4px 18px #0003;
+}
+.sidebar-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: #0007;
+}
+.sidebar-sheet {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 121;
+  width: min(280px, 85vw);
+  outline: none;
+}
+.sidebar-sheet > .sidebar {
+  height: 100%;
+  position: relative;
+  padding-top: 30px;
+}
+.sidebar-sheet-close {
+  position: absolute;
+  right: 10px;
+  top: 5px;
+}
+@media (max-width: 860px) {
+  .app-shell {
+    --sidebar-width: 170px;
+  }
+}
+@media (max-width: 767px) {
+  .app-shell {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+}

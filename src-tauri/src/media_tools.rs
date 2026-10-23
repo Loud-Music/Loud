@@ -10,6 +10,27 @@ use std::{
 };
 
 static INSTALL: Mutex<()> = Mutex::new(());
+type ToolFingerprint = Vec<(u64, std::time::SystemTime, u32)>;
+static VERIFIED_TOOLS: Mutex<Option<(PathBuf, ToolFingerprint)>> = Mutex::new(None);
+fn tool_fingerprint(folder: &Path) -> Option<ToolFingerprint> {
+    ["ffmpeg", "ffprobe"]
+        .iter()
+        .map(|name| {
+            let metadata = fs::metadata(folder.join(executable(name))).ok()?;
+            if !metadata.is_file() {
+                return None;
+            }
+            #[cfg(unix)]
+            let mode = {
+                use std::os::unix::fs::PermissionsExt;
+                metadata.permissions().mode()
+            };
+            #[cfg(not(unix))]
+            let mode = u32::from(metadata.permissions().readonly());
+            Some((metadata.len(), metadata.modified().ok()?, mode))
+        })
+        .collect()
+}
 #[derive(Serialize)]
 pub struct ToolStatus {
     pub ready: bool,
@@ -217,6 +238,19 @@ pub fn ensure(app: &tauri::AppHandle) -> Result<ToolStatus, String> {
     let _guard = INSTALL.lock().map_err(|e| e.to_string())?;
     let folder = root(app)?;
     fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+    if let Some(fingerprint) = tool_fingerprint(&folder) {
+        if VERIFIED_TOOLS
+            .lock()
+            .map_err(|e| e.to_string())?
+            .as_ref()
+            .is_some_and(|(old, stamp)| old == &folder && *stamp == fingerprint)
+        {
+            return Ok(ToolStatus {
+                ready: true,
+                version: "8.1".into(),
+            });
+        }
+    }
     let tools = if cfg!(windows) {
         [
             (
@@ -252,6 +286,9 @@ pub fn ensure(app: &tauri::AppHandle) -> Result<ToolStatus, String> {
         if !valid {
             download_tool(&folder, name, checksum)?;
         }
+    }
+    if let Some(fingerprint) = tool_fingerprint(&folder) {
+        *VERIFIED_TOOLS.lock().map_err(|e| e.to_string())? = Some((folder, fingerprint));
     }
     Ok(ToolStatus {
         ready: true,

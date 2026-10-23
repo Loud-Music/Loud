@@ -166,3 +166,41 @@ pub fn library_save(
     }
     write(&folder.join("library.json"), &rows)
 }
+
+pub(crate) fn save_offline(
+    app: &tauri::AppHandle,
+    account: &str,
+    track: Value,
+) -> Result<(), String> {
+    let _lock = WRITES.lock().map_err(|e| e.to_string())?;
+    let _disk = disk_lock(app)?;
+    let folder = account_folder(app, account)?;
+    let path = fs::canonicalize(
+        track["offlinePath"]
+            .as_str()
+            .ok_or("Не указан офлайн-файл")?,
+    )
+    .map_err(|e| e.to_string())?;
+    let audio = fs::canonicalize(root(app)?.join("offline/audio")).map_err(|e| e.to_string())?;
+    if !path.is_file() || path.parent() != Some(audio.as_path()) {
+        return Err("Недопустимый офлайн-файл".into());
+    }
+    let id = track["id"].as_str().ok_or("Не указан трек")?.to_owned();
+    app.asset_protocol_scope()
+        .allow_file(&path)
+        .map_err(|e| e.to_string())?;
+    let mut rows = records(app, account)?;
+    let record = Record {
+        track,
+        file: Some(path.to_string_lossy().into_owned()),
+    };
+    if let Some(old) = rows
+        .iter_mut()
+        .find(|row| row.track["id"].as_str() == Some(&id))
+    {
+        *old = record;
+    } else {
+        rows.push(record);
+    }
+    write(&folder.join("library.json"), &rows)
+}

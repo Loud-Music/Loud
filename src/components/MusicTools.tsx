@@ -1,7 +1,8 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { errorMessage } from "../lib/errors";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, LoaderCircle, RotateCw } from "lucide-react";
+import { Check, Spinner, Refresh } from "../icons";
 
 type Status = { ready: boolean; version: string };
 const jobs = new Map<string, Promise<Status>>();
@@ -86,16 +87,16 @@ export function PlaybackSetup() {
               <pre>{error}</pre>
             </details>
           </span>
-          <button
+          <Button
             className="text-button"
             onClick={() => setRevision((value) => value + 1)}
           >
             Повторить
-          </button>
+          </Button>
         </>
       ) : (
         <>
-          <LoaderCircle className="spin" size={16} />
+          <Spinner className="spin" size={16} />
           <span>
             Подготовка воспроизведения… При первом запуске это займёт немного
             времени.
@@ -135,17 +136,17 @@ function Tool({ command, name }: { command: string; name: string }) {
         {error && <p role="alert">{error}</p>}
       </span>
       {error ? (
-        <button
+        <Button
           className="icon-button"
           aria-label={`Повторить установку ${name}`}
           onClick={() => setRevision((v) => v + 1)}
         >
-          <RotateCw size={16} />
-        </button>
+          <Refresh size={16} />
+        </Button>
       ) : status.startsWith("Готово") ? (
         <Check size={17} />
       ) : (
-        <LoaderCircle className="spin" size={17} />
+        <Spinner className="spin" size={17} />
       )}
     </div>
   );

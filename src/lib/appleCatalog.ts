@@ -2,18 +2,22 @@ import { catalogJSON } from "./catalogRequest";
 import type { Track } from "./library";
 import { trackArtists } from "./library";
 import { invoke } from "@tauri-apps/api/core";
+import { appleWebAlbum } from "./appleWeb";
 
 const images = new Map<number, Promise<string | null>>();
 export function appleArtistImage(id: number) {
   if (!("__TAURI_INTERNALS__" in window)) return Promise.resolve(null);
   let request = images.get(id);
   if (!request) {
-    request = invoke<string | null>("apple_artist_image", { id }).catch(
-      (error) => {
+    request = invoke<string | null>("apple_artist_image", { id })
+      .then((image) => {
+        if (!image) images.delete(id);
+        return image;
+      })
+      .catch((error) => {
         images.delete(id);
         throw error;
-      },
-    );
+      });
     if (images.size >= 64) images.delete(images.keys().next().value!);
     images.set(id, request);
   }
@@ -74,6 +78,7 @@ export function appleTracks(items: Recording[]): Track[] {
       discNumber: item.discNumber,
       trackNumber: item.trackNumber,
       source: "Lucida",
+      fullRecording: true,
       format: "Аудио",
       qualityHint: "lossless",
       extractorUrl: item.trackViewUrl,
@@ -122,11 +127,17 @@ export async function appleArtistCatalog(name: string) {
 }
 
 export async function appleAlbum(id: string) {
-  const response = await catalogJSON<{ results: Recording[] }>(
-    "itunes",
-    `/lookup?${new URLSearchParams({ id, entity: "song", limit: "200", country: "us" })}`,
-  );
-  if (!Array.isArray(response.results))
-    throw new Error("Не удалось загрузить альбом");
-  return appleTracks(response.results);
+  try {
+    const response = await catalogJSON<{ results: Recording[] }>(
+      "itunes",
+      `/lookup?${new URLSearchParams({ id, entity: "song", limit: "200", country: "us" })}`,
+    );
+    if (!Array.isArray(response.results))
+      throw new Error("Не удалось загрузить альбом");
+    const tracks = appleTracks(response.results);
+    if (!tracks.length) throw new Error("Не удалось загрузить альбом");
+    return tracks;
+  } catch {
+    return appleWebAlbum(id);
+  }
 }

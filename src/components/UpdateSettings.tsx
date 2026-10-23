@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { useState } from "react";
 import { currentUpdate, checkUpdates } from "../lib/updates";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -42,7 +43,7 @@ export default function UpdateSettings() {
   }
   return (
     <div className="prefs-group">
-      <button
+      <Button
         className="prefs-button"
         disabled={busy || !("__TAURI_INTERNALS__" in window)}
         onClick={() => void run()}
@@ -52,7 +53,7 @@ export default function UpdateSettings() {
           : update
             ? "Установить и перезапустить"
             : "Проверить обновления"}
-      </button>
+      </Button>
       {message && (
         <p role="status" className="prefs-note">
           {message}

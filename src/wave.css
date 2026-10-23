@@ -127,7 +127,6 @@
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  animation: content-arrive 250ms var(--motion-ease);
 }
 .wave-preferences .section-heading {
   margin-bottom: 16px;

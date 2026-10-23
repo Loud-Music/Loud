@@ -47,7 +47,7 @@ pub fn playback_log(app: tauri::AppHandle, event: Value) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-fn command(app: &tauri::AppHandle) -> Result<Command, String> {
+pub(crate) fn command(app: &tauri::AppHandle) -> Result<Command, String> {
     let path = crate::media_tools::ytdlp(app)?;
     let mut cmd = crate::media_tools::run(&path);
     cmd.args([
@@ -156,10 +156,99 @@ pub async fn lucida_search(
     if !matches!(service.as_str(), "all" | "amazon" | "others") {
         return Err("Unsupported music service".into());
     }
+    if service == "amazon" {
+        return tauri::async_runtime::spawn_blocking(move || {
+            let (send, receive) = std::sync::mpsc::channel();
+            let native = send.clone();
+            let text = query.clone();
+            std::thread::spawn(move || {
+                let _ = native.send(crate::lucida_stream::search_amazon(&text));
+            });
+            std::thread::spawn(move || {
+                let result = tauri::async_runtime::block_on(
+                    crate::media_tools::ensure_music_module(app.clone()),
+                )
+                .and_then(|_| lucida(&app, "search", &query, "amazon"));
+                let _ = send.send(result);
+            });
+            let mut empty = None;
+            let mut failure = "Не удалось найти запись в Amazon".to_owned();
+            for _ in 0..2 {
+                match receive.recv_timeout(std::time::Duration::from_secs(30)) {
+                    Ok(Ok(result))
+                        if result["tracks"]
+                            .as_array()
+                            .is_some_and(|tracks| !tracks.is_empty()) =>
+                    {
+                        return Ok(result)
+                    }
+                    Ok(Ok(result)) => empty = Some(result),
+                    Ok(Err(error)) => failure = error,
+                    Err(_) => break,
+                }
+            }
+            empty.ok_or(failure)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
     crate::media_tools::ensure_music_module(app.clone()).await?;
     tauri::async_runtime::spawn_blocking(move || lucida(&app, "search", &query, &service))
         .await
         .map_err(|e| e.to_string())?
+}
+#[tauri::command]
+pub async fn soundcloud_import(app: tauri::AppHandle, url: String) -> Result<Value, String> {
+    let mut parsed = reqwest::Url::parse(url.trim())
+        .map_err(|_| "Вставьте ссылку на публичный трек или плейлист SoundCloud".to_string())?;
+    let parts: Vec<_> = parsed.path().split('/').filter(|p| !p.is_empty()).collect();
+    if parsed.scheme() != "https"
+        || !matches!(
+            parsed.host_str(),
+            Some("soundcloud.com" | "www.soundcloud.com")
+        )
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+        || !(parts.len() == 2 && !matches!(parts[1], "sets" | "tracks" | "likes" | "reposts")
+            || parts.len() == 3 && parts[1] == "sets")
+        || parts.iter().any(|p| {
+            !p.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        })
+    {
+        return Err("Нужна ссылка на публичный трек или плейлист SoundCloud".into());
+    }
+    parsed
+        .set_host(Some("soundcloud.com"))
+        .map_err(|e| e.to_string())?;
+    parsed.set_query(None);
+    parsed.set_fragment(None);
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut cmd = command(&app)?;
+        cmd.args([
+            "--yes-playlist", "--skip-download", "--ignore-errors",
+            "--ignore-no-formats-error", "--extractor-args", "soundcloud:formats=none",
+            "--playlist-end", "1001", "--socket-timeout", "8", "--retries", "0",
+            "--print", "%(.{id,title,artist,uploader,album,duration,webpage_url,thumbnail,availability,playlist_id,playlist_title,playlist_count})j",
+            "--",
+        ]).arg(parsed.as_str());
+        let out = cmd.output().map_err(|e| format!("Не удалось запустить импорт: {e}"))?;
+        if out.stdout.len() > 4 * 1024 * 1024 {
+            return Err("Плейлист слишком большой. Разделите его на части до 1000 песен.".into());
+        }
+        let entries: Vec<Value> = String::from_utf8_lossy(&out.stdout)
+            .lines().filter_map(|line| serde_json::from_str(line).ok()).collect();
+        let count = entries.first().and_then(|item| item["playlist_count"].as_u64());
+        if entries.len() > 1000 || count.is_some_and(|n| n > 1000) {
+            return Err("За один раз можно импортировать до 1000 песен. Разделите плейлист на части.".into());
+        }
+        let first = entries.first().ok_or_else(|| {
+            "SoundCloud не вернул песни. Проверьте ссылку и доступность плейлиста.".to_string()
+        })?;
+        Ok(json!({ "id": first["playlist_id"], "title": first["playlist_title"],
+            "total": count.unwrap_or(entries.len() as u64), "entries": entries }))
+    }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
 pub async fn extractor_search(app: tauri::AppHandle, query: String) -> Result<Value, String> {
@@ -184,7 +273,7 @@ pub async fn extractor_search(app: tauri::AppHandle, query: String) -> Result<Va
     .await
     .map_err(|e| e.to_string())?
 }
-fn inspect(app: &tauri::AppHandle, path: &Path, expected: f64) -> Result<Value, String> {
+pub(crate) fn inspect(app: &tauri::AppHandle, path: &Path, expected: f64) -> Result<Value, String> {
     let (_, probe) = crate::media_tools::paths(app)?;
     let mut cmd = crate::media_tools::run(&probe);
     cmd.args([
@@ -561,6 +650,7 @@ pub async fn extractor_stream(
     duration: f64,
     direct_only: Option<bool>,
     recording: Option<String>,
+    prepare_only: Option<bool>,
 ) -> Result<Value, String> {
     let url = track_url(&url)?;
     if !duration.is_finite() || duration <= 0.0 {
@@ -594,6 +684,7 @@ pub async fn extractor_stream(
         if actual <= 0.0 || (actual - duration).abs() > 3.0 { return Err("Source returned a preview or different recording".into()); }
         data["cacheUrl"] = json!(stream.as_str());
         data["cacheKey"] = json!(format!("{:x}", Sha256::digest(stream.as_str().as_bytes())));
+        if prepare_only.unwrap_or(false) { return Ok(data); }
         let (local, format) = crate::stream_proxy::register(app.clone(), stream.to_string(), duration, recording)?;
         data["url"] = json!(local);
         data["format"] = json!(format);

@@ -1,6 +1,8 @@
-import { catalogJSON } from "./catalogRequest";
+import { catalogJSON, clearCatalogCache } from "./catalogRequest";
 import { trackArtists, type Track } from "./library";
 import { appleAlbum, appleArtistCatalog } from "./appleCatalog";
+import { appleWebArtists, appleWebProfile } from "./appleWeb";
+import { persistentGet, persistentSet } from "./persistence";
 
 export interface Artist {
   id: number;
@@ -57,7 +59,7 @@ async function page<T>(path: string) {
     throw new Error("Каталог сейчас недоступен");
   return response;
 }
-export async function searchArtists(query: string): Promise<Artist[]> {
+async function deezerArtists(query: string): Promise<Artist[]> {
   if (!query.trim()) return [];
   const response = await page<Artist>(
     `/search/artist?${new URLSearchParams({ q: query, limit: "12" })}`,
@@ -75,8 +77,16 @@ export async function searchArtists(query: string): Promise<Artist[]> {
         Number(artistKey(b.name) === term) - Number(artistKey(a.name) === term),
     );
 }
+export async function searchArtists(query: string): Promise<Artist[]> {
+  if (!query.trim()) return [];
+  try {
+    const artists = await deezerArtists(query);
+    if (artists.length) return artists;
+  } catch {}
+  return appleWebArtists(query);
+}
 export async function findArtist(name: string): Promise<Artist | undefined> {
-  return (await searchArtists(name)).find(
+  return (await deezerArtists(name)).find(
     (artist) => artistKey(artist.name) === artistKey(name),
   );
 }
@@ -222,14 +232,86 @@ async function appleProfile(name: string) {
   };
 }
 
-export async function artistProfile(name: string) {
+interface ArtistCatalog {
+  artist: Artist;
+  songs: Track[];
+  releases: ArtistRelease[];
+  more: boolean;
+  related: Artist[];
+  partial: boolean;
+}
+const profilesKey = "loud:artist-catalogs:v1";
+const profileRequests = new Map<string, Promise<ArtistCatalog>>();
+function storedProfiles(): Record<
+  string,
+  { at: number; profile: ArtistCatalog }
+> {
   try {
-    const profile = await deezerProfile(name);
-    if (profile?.songs.length && profile.releases.length) return profile;
-    return (await appleProfile(name)) || profile;
+    const value = JSON.parse(persistentGet(profilesKey) || "{}");
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
   } catch {
-    return appleProfile(name);
+    return {};
   }
+}
+export function cachedArtistProfile(name: string) {
+  const cached = storedProfiles()[artistKey(name)]?.profile;
+  return cached &&
+    artistKey(cached.artist?.name || "") === artistKey(name) &&
+    Array.isArray(cached.songs) &&
+    Array.isArray(cached.releases) &&
+    Array.isArray(cached.related)
+    ? cached
+    : undefined;
+}
+export async function artistProfile(
+  name: string,
+  refresh = false,
+): Promise<ArtistCatalog> {
+  const key = artistKey(name);
+  const cached = cachedArtistProfile(name);
+  if (
+    !refresh &&
+    cached &&
+    Date.now() - storedProfiles()[key].at < (cached.partial ? 60000 : 3600000)
+  )
+    return cached;
+  const existing = profileRequests.get(key);
+  if (existing) return existing;
+  if (refresh) clearCatalogCache(["deezer", "itunes", "appleweb"]);
+  const useful = (profile: ArtistCatalog | undefined) => {
+    if (!profile || (!profile.songs.length && !profile.releases.length))
+      throw new Error("Каталог артиста недоступен");
+    return profile;
+  };
+  const request = Promise.any([
+    deezerProfile(name).then(useful),
+    appleProfile(name).then(useful),
+    appleWebProfile(name).then(useful),
+  ])
+    .then((profile) => {
+      const entries = storedProfiles();
+      entries[key] = { at: Date.now(), profile };
+      persistentSet(
+        profilesKey,
+        JSON.stringify(
+          Object.fromEntries(
+            Object.entries(entries)
+              .sort((a, b) => b[1].at - a[1].at)
+              .slice(0, 12),
+          ),
+        ),
+      );
+      return profile;
+    })
+    .catch((error) => {
+      if (cached) return cached;
+      throw error;
+    })
+    .finally(() => profileRequests.delete(key));
+  profileRequests.set(key, request);
+  return request;
 }
 
 export async function waveArtistTracks(

@@ -1,15 +1,17 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import {
-  ArrowDownToLine,
+  Download,
   ArrowRight,
   Check,
   ChevronRight,
   Folder,
   Heart,
-  ListMusic,
+  Queue,
   Minus,
   Plus,
   Users,
-} from "lucide-react";
+  ExternalLink,
+} from "../icons";
 import type { Playlist, Track } from "../lib/library";
 import { sourceLabel } from "../lib/import";
 import Dialog from "./Dialog";
@@ -57,37 +59,38 @@ export default function TrackMenu({
           <small>{sourceLabel(track.source)}</small>
         </span>
       </div>
-      <button autoFocus className="action-row" onClick={onFavorite}>
+      <Button autoFocus className="action-row" onClick={onFavorite}>
         <Heart size={19} />
         {favorite ? "Убрать из избранного" : "Добавить в избранное"}
         {favorite && <Check size={17} />}
-      </button>
-      <button className="action-row" onClick={onArtist}>
+      </Button>
+      <Button className="action-row" onClick={onArtist}>
         <Users size={19} />
         Открыть артиста
         <ChevronRight size={17} />
-      </button>
-      {track.remoteUrl && track.downloadAllowed !== false && (
-        <button
-          className="action-row"
-          disabled={downloading || track.downloaded}
-          onClick={onDownload}
-        >
-          <ArrowDownToLine size={18} />
-          {track.downloaded
-            ? `Загружено · ${track.format || "аудио"}`
-            : `Скачать оригинал · ${track.format || "аудио"}`}
-        </button>
-      )}
+      </Button>
+      {(track.remoteUrl || track.extractorUrl) &&
+        track.downloadAllowed !== false && (
+          <Button
+            className="action-row"
+            disabled={downloading || track.downloaded}
+            onClick={onDownload}
+          >
+            <Download size={18} />
+            {track.downloaded
+              ? `Загружено · ${track.format || "аудио"}`
+              : `Скачать оригинал · ${track.format || "аудио"}`}
+          </Button>
+        )}
       {track.attributionUrl && (
         <div className="track-attribution">
           <a href={track.attributionUrl} target="_blank" rel="noreferrer">
-            Оригинальный релиз ↗
+            Оригинальный релиз <ExternalLink size={12} />
           </a>
           {track.license &&
             (/^https?:\/\//.test(track.license) ? (
               <a href={track.license} target="_blank" rel="noreferrer">
-                Лицензия ↗
+                Лицензия <ExternalLink size={12} />
               </a>
             ) : (
               <span>{track.license}</span>
@@ -95,39 +98,39 @@ export default function TrackMenu({
         </div>
       )}
       {track.src ? (
-        <button className="action-row" onClick={onQueue}>
-          <ListMusic size={19} />
+        <Button className="action-row" onClick={onQueue}>
+          <Queue size={19} />
           Добавить в очередь
           <Plus size={17} />
-        </button>
+        </Button>
       ) : (
-        <button className="action-row" onClick={onLink}>
+        <Button className="action-row" onClick={onLink}>
           <Folder size={19} />
           Добавить локальный аудиофайл
           <ArrowRight size={17} />
-        </button>
+        </Button>
       )}
       <span className="nav-heading">ДОБАВИТЬ В ПЛЕЙЛИСТ</span>
       {playlists.map((playlist) => (
-        <button
+        <Button
           className="action-row"
           key={playlist.id}
           onClick={() => onPlaylist(playlist)}
         >
-          <ListMusic size={18} />
+          <Queue size={18} />
           {playlist.name}
           {playlist.tracks.includes(track.id) ? (
             <Check size={17} />
           ) : (
             <Plus size={17} />
           )}
-        </button>
+        </Button>
       ))}
       {inPlaylist && (
-        <button className="action-row destructive" onClick={onRemove}>
+        <Button className="action-row destructive" onClick={onRemove}>
           <Minus size={18} />
           Удалить из плейлиста
-        </button>
+        </Button>
       )}
     </Dialog>
   );

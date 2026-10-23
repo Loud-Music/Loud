@@ -1,3 +1,5 @@
+import SelectField from "./SelectField";
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -63,13 +65,13 @@ export default function CacheSettings() {
           </p>
         </div>
         <div className="prefs-row-control">
-          <select
+          <SelectField
             aria-label="Лимит аудиокэша"
             value={status?.limitBytes || 2 * 1024 ** 3}
             disabled={!status || busy}
-            onChange={(event) =>
+            onValueChange={(value) =>
               void update("audio_cache_limit", {
-                bytes: Number(event.target.value),
+                bytes: Number(value),
               })
             }
           >
@@ -85,7 +87,7 @@ export default function CacheSettings() {
                 {size(bytes)}
               </option>
             ))}
-          </select>
+          </SelectField>
         </div>
       </div>
       <div className="prefs-row">
@@ -100,13 +102,13 @@ export default function CacheSettings() {
           </p>
         </div>
         <div className="prefs-row-control">
-          <button
+          <Button
             className="prefs-button"
             disabled={!status || busy}
             onClick={() => void update("audio_cache_clear")}
           >
             {busy ? "Подождите…" : "Очистить кэш"}
-          </button>
+          </Button>
         </div>
       </div>
       {!!status?.downloadedBytes && (

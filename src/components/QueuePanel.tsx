@@ -1,4 +1,5 @@
-import { AudioLines, X } from "lucide-react";
+import { Button } from "@animate-ui/react/primitives/buttons/button";
+import { Waveform, X } from "../icons";
 import { time, type Track } from "../lib/library";
 import IconButton from "./IconButton";
 type Props = {
@@ -33,13 +34,13 @@ export default function QueuePanel({
           <strong>{current.title}</strong>
           <small>{current.artist}</small>
         </span>
-        <AudioLines size={18} />
+        <Waveform size={18} />
       </div>
       <span className="queue-label">В ОЧЕРЕДИ · {queue.length}</span>
       {queue.map((id, index) => {
         const t = tracks.find((track) => track.id === id);
         return t ? (
-          <button
+          <Button
             className={`queue-track ${id === currentId ? "active" : ""}`}
             key={`${id}-${index}`}
             onClick={() => playTrack(t)}
@@ -51,7 +52,7 @@ export default function QueuePanel({
               <small>{t.artist}</small>
             </span>
             <span className="queue-time">{time(t.duration)}</span>
-          </button>
+          </Button>
         ) : null;
       })}
       <p className="queue-tip">Пробел — воспроизведение или пауза.</p>

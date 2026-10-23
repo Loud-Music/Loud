@@ -1,3 +1,4 @@
+import CheckField from "./CheckField";
 import { useEffect, useState } from "react";
 import { discordConfig, saveDiscordConfig } from "../lib/useDiscordPresence";
 export default function DiscordSettings() {
@@ -18,13 +19,12 @@ export default function DiscordSettings() {
             <strong>Показывать, что я слушаю</strong>
             <p>Трек, исполнитель, обложка и время воспроизведения</p>
           </div>
-          <input
-            type="checkbox"
+          <CheckField
             aria-label="Discord Rich Presence"
             checked={config.enabled}
             disabled={!/^\d{17,20}$/.test(config.applicationId)}
-            onChange={(e) => {
-              const next = { ...config, enabled: e.target.checked };
+            onCheckedChange={(value) => {
+              const next = { ...config, enabled: value };
               setConfig(next);
               saveDiscordConfig(next);
             }}

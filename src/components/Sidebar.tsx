@@ -1,19 +1,21 @@
+import { SidebarSurface, SidebarMenuButton, useSidebar } from "./ui/sidebar";
+import { ScrollFade } from "@animate-ui/react/primitives/effects/scroll-fade";
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { version } from "../../package.json";
-import type { RefObject, Dispatch, SetStateAction } from "react";
 import {
-  AudioLines,
-  House,
+  Waveform,
+  Home,
   Radio,
-  Music2,
-  Disc3,
+  Music,
+  Disc,
   Users,
   Heart,
   Plus,
-  ListMusic,
-  Search,
-  Settings2,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+  Queue,
+  Settings,
+  Download,
+} from "../icons";
+import type { LoudIcon } from "../icons";
 import type { Playlist } from "../lib/library";
 import type { LocalAccount } from "../lib/accounts";
 import type { View } from "../lib/navigation";
@@ -21,11 +23,8 @@ import { viewLabel } from "../lib/navigation";
 import IconButton from "./IconButton";
 type Props = {
   view: View;
-  search: string;
-  searchInput: RefObject<HTMLInputElement | null>;
-  setView: Dispatch<SetStateAction<View>>;
-  setSearch: Dispatch<SetStateAction<string>>;
   favorites: string[];
+  downloadCount: number;
   playlists: Playlist[];
   account: LocalAccount;
   onSwitchAccount: () => void;
@@ -34,35 +33,43 @@ type Props = {
 };
 export default function Sidebar({
   view,
-  search,
-  searchInput,
-  setView,
-  setSearch,
   favorites,
+  downloadCount,
   playlists,
   account,
   onSwitchAccount,
   navigate,
   setModal,
 }: Props) {
-  const navItem = (name: View, Icon: LucideIcon, badge?: number) => (
-    <button
+  const { setOpenMobile } = useSidebar();
+  const go = (next: View) => {
+    navigate(next);
+    setOpenMobile(false);
+  };
+  const chooseModal = (next: "playlist" | "settings") => {
+    setOpenMobile(false);
+    setModal(next);
+  };
+  const navItem = (name: View, Icon: LoudIcon, badge?: number) => (
+    <SidebarMenuButton
+      label={viewLabel(name)}
+      active={view === name}
       key={name}
       aria-label={viewLabel(name)}
       className={`nav-item ${view === name ? "selected" : ""}`}
-      onClick={() => navigate(name)}
+      onClick={() => go(name)}
     >
-      <Icon size={19} strokeWidth={1.65} />
+      <Icon size={19} />
       <span>{viewLabel(name)}</span>
       {badge !== undefined && <span className="nav-count">{badge}</span>}
-    </button>
+    </SidebarMenuButton>
   );
 
   return (
-    <aside className="sidebar">
-      <button
+    <SidebarSurface>
+      <Button
         className="brand"
-        onClick={() => navigate("Listen Now")}
+        onClick={() => go("Listen Now")}
         aria-label="Главная Loud"
       >
         <img
@@ -72,58 +79,64 @@ export default function Sidebar({
           width={136}
           height={42}
         />
-      </button>
-      <label className="search-field">
-        <Search size={17} />
-        <input
-          ref={searchInput}
-          aria-label="Поиск музыки"
-          placeholder="Поиск музыки"
-          value={search}
-          onChange={(e) => {
-            setView("Discover");
-            setSearch(e.target.value);
-          }}
+        <img
+          className="brand-symbol"
+          src="/loud-symbol.svg"
+          alt=""
+          width={32}
+          height={36}
         />
-        <kbd>⌘ K</kbd>
-      </label>
-      <nav aria-label="Основная навигация">
-        {navItem("Моя волна", AudioLines)}
-        {navItem("Listen Now", House)}
-        {navItem("Discover", Radio)}
-        <span className="nav-heading library-heading">Медиатека</span>
-        {navItem("Songs", Music2)}
-        {navItem("Albums", Disc3)}
-        {navItem("Artists", Users)}
-        {navItem("Favorites", Heart, favorites.length)}
-        <div className="nav-heading heading-with-action">
-          <span>Плейлисты</span>
-          <IconButton
-            icon={Plus}
-            label="Создать плейлист"
-            onClick={() => setModal("playlist")}
-          />
-        </div>
-        <div className="playlist-nav">
-          {playlists.map((p, i) => (
-            <button
-              key={p.id}
-              aria-label={p.name}
-              className={`nav-item ${view === `playlist:${p.id}` ? "selected" : ""}`}
-              onClick={() => navigate(`playlist:${p.id}`)}
-            >
-              <span className={`playlist-icon playlist-color-${i % 3}`}>
-                <ListMusic size={14} />
-              </span>
-              <span>{p.name}</span>
-            </button>
-          ))}
-        </div>
-      </nav>
+      </Button>
+      <ScrollFade asChild size={16} blur={0} shrink={0}>
+        <nav aria-label="Основная навигация">
+          {navItem("Моя волна", Waveform)}
+          {navItem("Listen Now", Home)}
+          {navItem("Discover", Radio)}
+          <span
+            data-sidebar="group-label"
+            className="nav-heading library-heading"
+          >
+            Медиатека
+          </span>
+          {navItem("Songs", Music)}
+          {navItem("Albums", Disc)}
+          {navItem("Artists", Users)}
+          {navItem("Favorites", Heart, favorites.length)}
+          {navItem("Downloads", Download, downloadCount || undefined)}
+          <div className="nav-heading heading-with-action">
+            <span>Плейлисты</span>
+            <IconButton
+              icon={Plus}
+              label="Создать плейлист"
+              onClick={() => chooseModal("playlist")}
+            />
+          </div>
+          <div className="playlist-nav">
+            {playlists.map((p, i) => (
+              <SidebarMenuButton
+                label={p.name}
+                active={view === `playlist:${p.id}`}
+                key={p.id}
+                aria-label={p.name}
+                className={`nav-item ${view === `playlist:${p.id}` ? "selected" : ""}`}
+                onClick={() => go(`playlist:${p.id}`)}
+              >
+                <span className={`playlist-icon playlist-color-${i % 3}`}>
+                  <Queue size={14} />
+                </span>
+                <span>{p.name}</span>
+              </SidebarMenuButton>
+            ))}
+          </div>
+        </nav>
+      </ScrollFade>
       <div className="sidebar-bottom">
-        <button
+        <Button
           className="profile account-profile"
-          onClick={onSwitchAccount}
+          onClick={() => {
+            setOpenMobile(false);
+            onSwitchAccount();
+          }}
           aria-label="Сменить профиль"
         >
           <span className="avatar">
@@ -133,24 +146,24 @@ export default function Sidebar({
             <strong>{account.name}</strong>
             <small>Сменить профиль</small>
           </span>
-        </button>
-        <button
+        </Button>
+        <Button
           className="profile"
           aria-label="Настройки"
           onClick={() => {
-            setModal("settings");
+            chooseModal("settings");
           }}
         >
           <span className="avatar">
-            <Settings2 size={19} />
+            <Settings size={19} />
           </span>
           <span>
             <strong>Настройки</strong>
             <small>Loud {version}</small>
           </span>
-          <Settings2 size={17} />
-        </button>
+          <Settings size={17} />
+        </Button>
       </div>
-    </aside>
+    </SidebarSurface>
   );
 }

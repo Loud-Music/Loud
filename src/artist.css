@@ -114,7 +114,7 @@
   background: var(--hover);
 }
 .artist-song.is-current .artist-song-title > button:first-child {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .artist-song > img {
   width: 42px;
@@ -132,13 +132,13 @@
   height: 32px;
   padding: 0;
 }
-.artist-song-index svg {
+.artist-song-index > svg {
   display: none;
 }
 .artist-song:hover .artist-song-index > span {
   display: none;
 }
-.artist-song:hover .artist-song-index svg {
+.artist-song:hover .artist-song-index > svg {
   display: block;
   color: var(--text);
 }
@@ -283,11 +283,12 @@
   min-height: 14px;
 }
 .artist-profile-card {
+  position: relative;
   min-width: 0;
   padding: 0;
   text-align: center;
 }
-.artist-profile-card > .artist-portrait {
+.artist-card-link > .artist-portrait {
   display: block;
   height: auto;
   aspect-ratio: 1;
@@ -298,7 +299,7 @@
   box-shadow: 0 4px 16px #0002;
   transition: transform 280ms var(--motion-ease);
 }
-.artist-profile-card:hover > .artist-portrait {
+.artist-card-link:hover > .artist-portrait {
   transform: translateY(-3px);
 }
 .artist-portrait img {
@@ -459,7 +460,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .artist-page,
-  .artist-profile-card > .artist-portrait,
+  .artist-card-link > .artist-portrait,
   .artist-release-card img,
   .artist-release-card > div > span {
     animation: none;
@@ -500,7 +501,7 @@
 }
 .album-artist-name {
   font-size: 20px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .album-copy .artist-actions {
   padding: 15px 0 0;
@@ -542,7 +543,7 @@
 }
 .album-track.is-current strong,
 .album-track.is-current .album-track-number {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 .album-track > svg {
   opacity: 0;
@@ -566,4 +567,45 @@
     flex-direction: column;
     align-items: flex-start;
   }
+}
+
+.artist-card-link {
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: center;
+}
+.artist-card-link > .artist-portrait {
+  position: relative;
+}
+.artist-cover-label {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 7px;
+  border-radius: 4px;
+  color: #fff;
+  background: #0009;
+  font-size: 9px;
+  white-space: nowrap;
+}
+.artist-photo-retry {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--subtle);
+}
+.artist-photo-retry:hover {
+  color: var(--text);
+  background: var(--hover);
 }

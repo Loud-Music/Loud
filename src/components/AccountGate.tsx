@@ -1,6 +1,7 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { errorMessage } from "../lib/errors";
 import { useState } from "react";
-import { ArrowLeft, LoaderCircle, Plus, UserRound } from "lucide-react";
+import { ArrowLeft, Spinner, Plus, User, Minus, X } from "../icons";
 import App from "../App";
 import {
   createAccount,
@@ -49,18 +50,18 @@ export default function AccountGate() {
     <main className="account-screen" data-tauri-drag-region>
       {"__TAURI_INTERNALS__" in window && (
         <div className="account-window-controls">
-          <button
+          <Button
             aria-label="Свернуть"
             onClick={() => void getCurrentWindow().minimize()}
           >
-            −
-          </button>
-          <button
+            <Minus size={18} />
+          </Button>
+          <Button
             aria-label="Закрыть"
             onClick={() => void getCurrentWindow().close()}
           >
-            ×
-          </button>
+            <X size={18} />
+          </Button>
         </div>
       )}
       <form
@@ -96,7 +97,7 @@ export default function AccountGate() {
         ) : (
           <div className="account-list">
             {accounts.map((item) => (
-              <button
+              <Button
                 key={item.id}
                 type="button"
                 className={selected?.id === item.id ? "selected" : ""}
@@ -107,13 +108,13 @@ export default function AccountGate() {
                 }}
               >
                 <span className="account-avatar">
-                  <UserRound size={21} />
+                  <User size={21} />
                 </span>
                 <strong>{item.name}</strong>
                 <small>
                   {item.passwordHash ? "Защищён паролем" : "Локальный профиль"}
                 </small>
-              </button>
+              </Button>
             ))}
           </div>
         )}
@@ -135,16 +136,16 @@ export default function AccountGate() {
             {error}
           </p>
         )}
-        <button
+        <Button
           className="button button-accent account-submit"
           type="submit"
           disabled={busy || (creating && !name.trim())}
         >
-          {busy ? <LoaderCircle size={17} className="spin" /> : null}
+          {busy ? <Spinner size={17} className="spin" /> : null}
           {creating ? "Создать профиль" : "Продолжить"}
-        </button>
+        </Button>
         {accounts.length > 0 && (
-          <button
+          <Button
             className="text-button account-alternate"
             type="button"
             onClick={() => {
@@ -155,7 +156,7 @@ export default function AccountGate() {
           >
             {creating ? <ArrowLeft size={15} /> : <Plus size={15} />}
             {creating ? "К профилям" : "Добавить профиль"}
-          </button>
+          </Button>
         )}
       </form>
     </main>

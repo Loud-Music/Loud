@@ -11,7 +11,7 @@ export function AppleIcon({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
-export function SpotifyIcon() {
+export function SpotifyIcon({ monochrome = false }: { monochrome?: boolean }) {
   return (
     <svg
       width="21"
@@ -20,10 +20,15 @@ export function SpotifyIcon() {
       fill="none"
       aria-hidden="true"
     >
-      <circle cx="12" cy="12" r="10" fill="#28b875" />
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
+        fill={monochrome ? "currentColor" : "#28b875"}
+      />
       <path
         d="M6.5 9c4-1.3 7.3-1.1 11 1M7.3 12.2c3.2-1 6.1-.8 9.1.9M8.1 15.2c2.6-.7 4.8-.6 7.2.7"
-        stroke="white"
+        stroke={monochrome ? "var(--surface)" : "white"}
         strokeWidth="1.6"
         strokeLinecap="round"
       />

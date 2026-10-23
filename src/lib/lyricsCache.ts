@@ -1,5 +1,6 @@
 import type { Track } from "./library";
 import type { Lyrics } from "./lyrics";
+import { invoke } from "@tauri-apps/api/core";
 
 type Kind = "words" | "lines";
 const pending = new Map<string, Promise<Lyrics | undefined>>();
@@ -17,13 +18,18 @@ export function readyLyrics(track: Track): Lyrics | undefined {
     memory.get(identity("lines", track))?.value
   );
 }
-const identity = (kind: Kind, track: Track) =>
+export const lyricIdentity = (kind: Kind, track: Track) =>
   JSON.stringify([
     kind,
     track.artist.normalize("NFKC").toLowerCase().trim(),
     track.title.normalize("NFKC").toLowerCase().trim(),
     Math.round(track.duration),
   ]);
+const identity = lyricIdentity;
+export function forgetMissingLyrics(track: Track) {
+  for (const kind of ["words", "lines"] as const)
+    missing.delete(identity(kind, track));
+}
 function open() {
   if (typeof indexedDB === "undefined")
     return Promise.reject(new Error("No lyric cache"));
@@ -39,8 +45,16 @@ function open() {
 }
 async function read(
   key: string,
-): Promise<{ at: number; value: Lyrics } | undefined> {
+): Promise<{ at: number; value: Lyrics; pinned?: boolean } | undefined> {
   try {
+    if ("__TAURI_INTERNALS__" in window) {
+      const saved = await invoke<{
+        at: number;
+        value: Lyrics;
+        pinned?: boolean;
+      } | null>("lyrics_cache_get", { key });
+      if (saved) return saved;
+    }
     const db = await open();
     return await new Promise((resolve, reject) => {
       const request = db.transaction("lyrics").objectStore("lyrics").get(key);
@@ -53,6 +67,10 @@ async function read(
 }
 async function write(key: string, value: Lyrics) {
   try {
+    if ("__TAURI_INTERNALS__" in window) {
+      await invoke("lyrics_cache_put", { key, value });
+      return;
+    }
     const db = await open();
     const tx = db.transaction("lyrics", "readwrite");
     tx.objectStore("lyrics").put({ at: Date.now(), value }, key);
@@ -73,7 +91,12 @@ export function cachedLyrics(
   let request!: Promise<Lyrics | undefined>;
   request = (async () => {
     const stored = await read(key);
-    if (stored && Date.now() - stored.at < 7 * 86400000) {
+    if (
+      stored &&
+      (stored.pinned ||
+        navigator.onLine === false ||
+        Date.now() - stored.at < 7 * 86400000)
+    ) {
       remember(key, stored.value, stored.at);
       return stored.value;
     }
@@ -108,6 +131,10 @@ export async function clearLyricsCache(track: Track) {
     missing.delete(identity(kind, track));
   }
   try {
+    if ("__TAURI_INTERNALS__" in window) {
+      for (const kind of ["words", "lines"] as const)
+        await invoke("lyrics_cache_remove", { key: identity(kind, track) });
+    }
     const db = await open();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction("lyrics", "readwrite");

@@ -1,13 +1,16 @@
 mod artwork;
 mod audio;
 mod cache;
+mod community;
 mod discord;
 mod extractor;
 mod gapless;
 mod lucida_stream;
 mod media_tools;
 mod network;
+mod offline;
 mod persistence;
+mod resumable;
 mod spicy;
 mod storage;
 mod stream_proxy;
@@ -64,6 +67,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            offline::init(app.handle()).map_err(std::io::Error::other)?;
             #[cfg(target_os = "linux")]
             if let Some(window) = app.get_webview_window("main") {
                 window.with_webview(|webview| {
@@ -88,6 +92,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            community::open_community,
+            offline::offline_download,
+            offline::offline_cover,
+            offline::offline_pause,
+            offline::lyrics_cache_get,
+            offline::lyrics_cache_put,
+            offline::lyrics_cache_remove,
             artwork::artwork_image,
             gapless::gapless_prepare,
             gapless::gapless_release,
@@ -106,6 +117,7 @@ pub fn run() {
             extractor::playback_log,
             extractor::lucida_search,
             extractor::extractor_search,
+            extractor::soundcloud_import,
             extractor::extractor_audio,
             extractor::extractor_cached,
             extractor::extractor_cache_stream,

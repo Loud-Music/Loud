@@ -51,6 +51,7 @@ fn allowed_url(url: &reqwest::Url) -> bool {
                         | "api.amll.dev"
                         | "api.lrcmux.dev"
                         | "itunes.apple.com"
+                        | "music.apple.com"
                         | "lyrics.rmmreviv.al"
                 )
         })
@@ -71,7 +72,12 @@ pub fn audio_path(root: &std::path::Path, key: &str) -> Result<PathBuf, String> 
     if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err("Invalid audio cache key".into());
     }
-    Ok(root.join(format!("{key}.flac")))
+    let cached = root.join(format!("{key}.flac"));
+    Ok(if cached.is_file() {
+        cached
+    } else {
+        crate::offline::audio_path(key).unwrap_or(cached)
+    })
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -195,6 +201,15 @@ pub async fn catalog_json(
         "itunes" if path.starts_with("/search?") || path.starts_with("/lookup?") => {
             "https://itunes.apple.com"
         }
+        "appleweb"
+            if path.starts_with("/us/search?term=")
+                || ["/us/artist/", "/us/album/"].iter().any(|prefix| {
+                    path.strip_prefix(prefix)
+                        .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+                }) =>
+        {
+            "https://music.apple.com"
+        }
         "rmmrevival" if path.starts_with("/lyrics?id=") => "https://lyrics.rmmreviv.al",
         "deezer"
             if path.starts_with("/search/artist?")
@@ -219,7 +234,7 @@ pub async fn catalog_json(
         let result: Result<serde_json::Value,String> = (|| {
         let response = client()?
             .get(format!("{origin}{path}"))
-            .timeout(Duration::from_secs(if provider == "deezer" { 3 } else { 30 }))
+            .timeout(Duration::from_secs(if provider == "deezer" { 3 } else if provider == "appleweb" { 8 } else if provider == "itunes" && path.contains("entity=musicArtist") { 6 } else { 30 }))
             .send()
             .map_err(|e| e.to_string())?;
         if matches!(provider.as_str(), "rmmrevival" | "betterlyrics" | "lyricsplus" | "lrcmux") && matches!(response.status().as_u16(), 403 | 429) {
@@ -232,9 +247,16 @@ pub async fn catalog_json(
             .take(8 * 1024 * 1024)
             .read_to_string(&mut body)
             .map_err(|e| e.to_string())?;
+        if provider == "appleweb" {
+            let start = body.find("id=\"serialized-server-data\"").ok_or("Apple catalog data missing")?;
+            let script = body[start..].split_once('>').ok_or("Apple catalog script missing")?.1;
+            let json = script.split_once("</script>").ok_or("Apple catalog script incomplete")?.0;
+            let value: serde_json::Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
+            return value.pointer("/data/0/data").cloned().filter(|page| page["sections"].is_array()).ok_or("Apple catalog page missing".into());
+        }
         serde_json::from_str(&body).map_err(|e| e.to_string())
         })();
-        if matches!(provider.as_str(), "lrclib" | "lyricsplus" | "betterlyrics" | "lrcmux" | "amll" | "rmmrevival" | "itunes") {
+        if matches!(provider.as_str(), "lrclib" | "lyricsplus" | "betterlyrics" | "lrcmux" | "amll" | "rmmrevival" | "itunes" | "appleweb" | "deezer") {
             if let Ok(folder)=app.path().app_log_dir() {
                 let _=fs::create_dir_all(&folder);
                 let file=folder.join("lyrics.log");

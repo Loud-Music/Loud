@@ -50,6 +50,8 @@ export interface Track {
   remoteUrl?: string;
   nativeKey?: string;
   downloaded?: boolean;
+  offlinePath?: string;
+  offlineCoverPath?: string;
   downloadAllowed?: boolean;
   license?: string;
   attributionUrl?: string;
@@ -160,6 +162,9 @@ export async function restoreTracks(): Promise<Track[]> {
     return rows.map((row) => ({
       ...row.track,
       inLibrary: true,
+      cover: row.track.offlineCoverPath
+        ? convertFileSrc(row.track.offlineCoverPath)
+        : row.track.cover,
       src: row.file
         ? convertFileSrc(row.file)
         : row.track.src?.startsWith("blob:")

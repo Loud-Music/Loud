@@ -177,12 +177,84 @@ fn compact_data(text: &str) -> Result<Value, String> {
         let Some(values) = node["data"].as_array() else {
             continue;
         };
-        if values.len() > 65536 || values.first().and_then(|value| value.get("info")).is_none() {
+        if values.len() > 65536
+            || values
+                .first()
+                .is_none_or(|value| value.get("info").is_none() && value.get("results").is_none())
+        {
             continue;
         }
         return hydrate(0, values, &mut Vec::new(), &mut 100000);
     }
     Err("Unsupported compact metadata format".into())
+}
+
+static AMAZON_COUNTRY: std::sync::Mutex<Option<(Instant, String)>> = std::sync::Mutex::new(None);
+pub fn search_amazon(query: &str) -> Result<Value, String> {
+    let client = client()?;
+    let old = AMAZON_COUNTRY.lock().map_err(|e| e.to_string())?.clone();
+    let country = if let Some((_, country)) =
+        old.filter(|(at, _)| at.elapsed() < Duration::from_secs(300))
+    {
+        country
+    } else {
+        let response = client
+            .get("https://lucida.to/api/load")
+            .query(&[("url", "/api/countries?service=amazon")])
+            .timeout(Duration::from_secs(3))
+            .send()
+            .map_err(|e| e.to_string())?;
+        let data: Value = serde_json::from_str(&body(response)?).map_err(|e| e.to_string())?;
+        let countries = data["countries"]
+            .as_array()
+            .ok_or("Missing Amazon countries")?;
+        let country = countries
+            .iter()
+            .find(|value| value["code"] == "US")
+            .or_else(|| countries.first())
+            .and_then(|value| value["code"].as_str())
+            .filter(|country| country.len() == 2 && country.bytes().all(|b| b.is_ascii_uppercase()))
+            .ok_or("No Amazon servers available")?
+            .to_owned();
+        *AMAZON_COUNTRY.lock().map_err(|e| e.to_string())? =
+            Some((Instant::now(), country.clone()));
+        country
+    };
+    let response = client
+        .get("https://lucida.to/search/__data.json")
+        .query(&[
+            ("query", query),
+            ("service", "amazon"),
+            ("country", country.as_str()),
+            ("x-sveltekit-invalidated", "01"),
+        ])
+        .header("Accept-Encoding", "gzip")
+        .timeout(Duration::from_secs(5))
+        .send()
+        .map_err(|e| e.to_string())?;
+    let data = compact_data(&body(response)?)?;
+    let result = &data["results"];
+    if result["success"] != true {
+        return Err(result["error"]
+            .as_str()
+            .unwrap_or("Amazon search unavailable")
+            .into());
+    }
+    let tracks: Vec<Value> = result["results"]["tracks"]
+        .as_array()
+        .ok_or("Missing Amazon tracks")?
+        .iter()
+        .take(25)
+        .cloned()
+        .map(|mut track| {
+            track["service"] = json!("amazon");
+            track["country"] = json!(country);
+            track
+        })
+        .collect();
+    Ok(
+        json!({"catalogs":[{"service":"amazon","country":country,"count":tracks.len()}],"tracks":tracks}),
+    )
 }
 
 fn metadata(client: &Client, url: &str) -> Result<(Value, usize, bool), String> {
@@ -298,6 +370,9 @@ pub fn prepare(url: &str, expected_duration: f64) -> Result<Value, String> {
 }
 
 pub fn download(url: &str) -> Result<Response, String> {
+    download_range(url, 0, None)
+}
+pub fn download_range(url: &str, offset: u64, validator: Option<&str>) -> Result<Response, String> {
     let client = client()?;
     let started = Instant::now();
     let failure = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
@@ -309,7 +384,17 @@ pub fn download(url: &str) -> Result<Response, String> {
         {
             return Err(error);
         }
-        let mut response = client.get(url).send().map_err(|e| e.to_string())?;
+        let mut request = client.get(url);
+        if offset > 0 {
+            request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
+            if let Some(validator) = validator {
+                request = request.header(reqwest::header::IF_RANGE, validator);
+            }
+        }
+        let mut response = request.send().map_err(|e| e.to_string())?;
+        if response.status().as_u16() == 416 {
+            return Ok(response);
+        }
         if response.status().is_success() {
             return Ok(response);
         }

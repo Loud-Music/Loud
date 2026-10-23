@@ -1,4 +1,5 @@
-import { Play } from "lucide-react";
+import { Button } from "@animate-ui/react/primitives/buttons/button";
+import { Play } from "../icons";
 import type { Track } from "../lib/library";
 type Props = {
   track: Track;
@@ -23,7 +24,7 @@ export default function LibraryAlbumCard({
       style={{ animationDelay: `${index * 45}ms` }}
     >
       <div className="cover-wrap">
-        <button
+        <Button
           className="cover-link"
           onClick={() => openAlbum(track)}
           aria-label={`Открыть ${track.album}`}
@@ -33,8 +34,8 @@ export default function LibraryAlbumCard({
             alt={`${track.album} — обложка`}
             loading="lazy"
           />
-        </button>
-        <button
+        </Button>
+        <Button
           className="cover-play"
           aria-label={`Слушать ${track.album}`}
           onClick={() =>
@@ -45,17 +46,17 @@ export default function LibraryAlbumCard({
           }
         >
           <Play size={21} fill="currentColor" />
-        </button>
+        </Button>
       </div>
-      <button className="album-name" onClick={() => openAlbum(track)}>
+      <Button className="album-name" onClick={() => openAlbum(track)}>
         {track.album}
-      </button>
-      <button
+      </Button>
+      <Button
         className="album-artist artist-text-link"
         onClick={() => openArtist(track.artist)}
       >
         {track.artist}
-      </button>
+      </Button>
     </article>
   );
 }

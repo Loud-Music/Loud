@@ -1,7 +1,6 @@
-import { resolveExtracted } from "./extractor";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import type { Track } from "./library";
-import { storeTracks, storedAudio } from "./library";
+import { storedAudio } from "./library";
 export const isDesktop = () =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 export interface CatalogAlbum {
@@ -217,60 +216,6 @@ interface CachedAudio {
   key: string;
   path: string;
   size: number;
-}
-export async function downloadTrack(track: Track): Promise<Track> {
-  if (track.extractorUrl) {
-    const resolved = {
-      ...(await resolveExtracted(track)),
-      downloaded: true,
-      inLibrary: true,
-    };
-    await storeTracks([{ track: resolved }]);
-    return resolved;
-  }
-  if (track.downloadAllowed === false)
-    throw new Error("Автор отключил скачивание этого трека.");
-  if (!track.remoteUrl) throw new Error("У трека нет ссылки для скачивания.");
-  if (isDesktop()) {
-    const cache = await invoke<CachedAudio>("cache_catalog_audio", {
-      url: track.remoteUrl,
-    });
-    const saved: Track = {
-      ...track,
-      nativeKey: cache.key,
-      src: convertFileSrc(cache.path),
-      downloaded: true,
-      inLibrary: true,
-    };
-    await storeTracks([{ track: saved }]);
-    return saved;
-  }
-  const response = await fetch(
-    import.meta.env.DEV
-      ? track.remoteUrl.replace("https://archive.org", "/archive-api")
-      : track.remoteUrl,
-    { signal: AbortSignal.timeout(180000) },
-  );
-  if (!response.ok) throw new Error(`Скачать failed (${response.status}).`);
-  if (Number(response.headers.get("content-length")) > 200 * 1024 * 1024)
-    throw new Error("Файл превышает ограничение загрузки 200 МБ.");
-  const blob = await response.blob();
-  const head = new Uint8Array(await blob.slice(0, 4).arrayBuffer());
-  const valid =
-    track.format === "FLAC"
-      ? String.fromCharCode(...head) === "fLaC"
-      : String.fromCharCode(...head.slice(0, 3)) === "ID3" ||
-        (head[0] === 255 && (head[1] & 224) === 224);
-  if (blob.size > 200 * 1024 * 1024 || !valid)
-    throw new Error("Некорректный аудиофайл или превышен размер загрузки.");
-  const saved: Track = {
-    ...track,
-    downloaded: true,
-    inLibrary: true,
-    src: URL.createObjectURL(blob),
-  };
-  await storeTracks([{ track: saved, blob }]);
-  return saved;
 }
 const keyCache = new Map<string, string>();
 export async function prepareExclusive(track: Track): Promise<string> {

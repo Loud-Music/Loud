@@ -26,8 +26,8 @@ fn allowed(url: &reqwest::Url) -> bool {
 
 #[derive(Serialize)]
 pub struct Artwork {
-    mime: String,
-    data: String,
+    pub(crate) mime: String,
+    pub(crate) data: String,
 }
 
 #[tauri::command]

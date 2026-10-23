@@ -1,5 +1,6 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { memo, useMemo } from "react";
-import { AudioLines, Clock3, Play, Heart, Ellipsis } from "lucide-react";
+import { Waveform, Clock, Play, Heart, More, Download } from "../icons";
 import type { Track } from "../lib/library";
 import { time } from "../lib/library";
 import { prepareLyrics } from "../lib/lyricsPrefetch";
@@ -37,7 +38,7 @@ export default memo(function TrackTable({
         <span className="album-column">Альбом</span>
         <span className="source-column">Качество</span>
         <span className="duration-column">
-          <Clock3 size={14} />
+          <Clock size={14} />
         </span>
         <span />
       </div>
@@ -58,30 +59,30 @@ export default memo(function TrackTable({
           onBlur={cancelAudioPreparation}
           onDoubleClick={() => playTrack(track, list)}
         >
-          <button
+          <Button
             className="row-index"
             aria-label={`Слушать ${track.title}`}
             onClick={() => playTrack(track, list)}
           >
             {currentId === track.id && playing ? (
-              <AudioLines size={17} className="playing-wave" />
+              <Waveform size={17} className="playing-wave" />
             ) : (
               <>
                 <span>{i + 1}</span>
                 <Play size={15} fill="currentColor" />
               </>
             )}
-          </button>
+          </Button>
           <div className="track-info">
             <img src={track.cover} alt="" loading="lazy" decoding="async" />
             <span>
               <strong>
-                <button
+                <Button
                   className="track-title-link"
                   onClick={() => playTrack(track, list)}
                 >
                   {track.title}
-                </button>
+                </Button>
                 {track.format && (
                   <span className="inline-format">{track.format}</span>
                 )}
@@ -90,7 +91,7 @@ export default memo(function TrackTable({
                     className="downloaded-mark"
                     title="Доступно без интернета"
                   >
-                    ↓
+                    <Download size={12} />
                   </span>
                 )}
               </strong>
@@ -117,7 +118,7 @@ export default memo(function TrackTable({
               onClick={() => toggleFavorite(track.id)}
             />
             <IconButton
-              icon={Ellipsis}
+              icon={More}
               label={`Действия с треком ${track.title}`}
               onClick={() => setSelected(track)}
             />

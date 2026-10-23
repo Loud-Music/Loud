@@ -1,3 +1,4 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { prepareLyrics, useLyricsPrefetch } from "../lib/lyricsPrefetch";
 import {
   cancelAudioPreparation,
@@ -5,15 +6,7 @@ import {
   prepareAudio,
 } from "../lib/extractor";
 import { useEffect } from "react";
-import {
-  ArrowDownToLine,
-  Check,
-  Ellipsis,
-  LoaderCircle,
-  Music2,
-  Play,
-  Plus,
-} from "lucide-react";
+import { Download, Check, More, Spinner, Music, Play, Plus } from "../icons";
 import { time } from "../lib/library";
 import type { Track } from "../lib/library";
 
@@ -72,7 +65,7 @@ export default function SearchResults({
               }}
               onBlur={cancelAudioPreparation}
             >
-              <button
+              <Button
                 className="search-track-cover"
                 aria-label={`Слушать ${track.title}`}
                 onClick={() => onPlay(stored || track, tracks)}
@@ -86,22 +79,22 @@ export default function SearchResults({
                   }}
                 />
                 <Play size={16} fill="currentColor" />
-              </button>
+              </Button>
               <div className="catalog-song-title">
-                <button
+                <Button
                   className="search-title-link"
                   onClick={() => onPlay(stored || track, tracks)}
                 >
                   {track.title}
-                </button>
-                <button
+                </Button>
+                <Button
                   className="artist-text-link"
                   aria-label={`Открыть артиста ${track.artist}`}
                   onClick={() => onArtist(track.artist)}
                 >
                   {track.artist}
                   {track.source === "Live Music Archive" ? " · Live" : ""}
-                </button>
+                </Button>
               </div>
               <span
                 className={`format-label ${track.format === "FLAC" ? "" : "format-lossy"}`}
@@ -112,15 +105,15 @@ export default function SearchResults({
                 {track.album}
               </span>
               <span className="catalog-duration">{time(track.duration)}</span>
-              <button
+              <Button
                 className="icon-button"
                 aria-label={`Добавить ${track.title} в медиатеку`}
                 disabled={saving || !!stored}
                 onClick={() => void onAdd([track])}
               >
                 {stored ? <Check size={16} /> : <Plus size={17} />}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="icon-button"
                 aria-label={`Скачать ${track.title}`}
                 title={
@@ -140,20 +133,20 @@ export default function SearchResults({
                 onClick={() => void onDownload(stored || track)}
               >
                 {downloading === track.id ? (
-                  <LoaderCircle className="spin" size={16} />
+                  <Spinner className="spin" size={16} />
                 ) : stored?.downloaded ? (
                   <Check size={16} />
                 ) : (
-                  <ArrowDownToLine size={17} />
+                  <Download size={17} />
                 )}
-              </button>
-              <button
+              </Button>
+              <Button
                 className="icon-button"
                 aria-label={`Сведения о треке ${track.title}`}
                 onClick={() => onInfo(stored || track)}
               >
-                <Ellipsis size={17} />
-              </button>
+                <More size={17} />
+              </Button>
             </div>
           );
         })}
@@ -172,7 +165,7 @@ export default function SearchResults({
       )}
       {!visible.length && (
         <div className="catalog-error">
-          <Music2 size={28} />
+          <Music size={28} />
           <h2>Песни не найдены</h2>
           <p>
             {flacOnly

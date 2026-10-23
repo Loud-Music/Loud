@@ -1,11 +1,19 @@
+import { Button } from "@animate-ui/react/primitives/buttons/button";
 import { Fragment } from "react";
 import { trackArtists } from "../lib/library";
 import { prepareLyrics, useLyricsPrefetch } from "../lib/lyricsPrefetch";
-import { cancelAudioPreparation, prepareAudio } from "../lib/extractor";
+import {
+  cancelAudioPreparation,
+  prepareAudio,
+  prefetchAudio,
+} from "../lib/extractor";
 import { useEffect, useState } from "react";
-import { Play, LoaderCircle, RotateCw, Shuffle } from "lucide-react";
+import { Play, Spinner, Refresh, Shuffle, Waveform } from "../icons";
 import { loadAlbum, type AlbumSeed } from "../lib/albums";
 import { recordingKey, time, type Track } from "../lib/library";
+import DownloadCollection from "./DownloadCollection";
+import type { OfflineGroup, OfflineJob } from "../lib/offlineStore";
+import "../offline.css";
 
 export default function AlbumPage({
   seed,
@@ -14,6 +22,9 @@ export default function AlbumPage({
   onArtist,
   currentId,
   playing,
+  offlineJobs,
+  onDownload,
+  openDownloads,
 }: {
   seed: AlbumSeed;
   saved: Track[];
@@ -21,6 +32,9 @@ export default function AlbumPage({
   onArtist: (name: string) => void;
   currentId: string;
   playing: boolean;
+  offlineJobs: Record<string, OfflineJob>;
+  onDownload: (group: OfflineGroup, tracks: Track[]) => Promise<void>;
+  openDownloads: () => void;
 }) {
   const [album, setAlbum] = useState<Awaited<ReturnType<typeof loadAlbum>>>();
   const [loading, setLoading] = useState(true);
@@ -52,6 +66,11 @@ export default function AlbumPage({
   }, [seed.id, seed.title, seed.artistName, revision]);
   const details = album || seed;
   const songs = album?.tracks || [];
+  useEffect(() => {
+    if (!songs[0] || songs[0].downloaded || navigator.onLine === false) return;
+    const timer = window.setTimeout(() => prefetchAudio(songs[0]), 80);
+    return () => window.clearTimeout(timer);
+  }, [songs[0]?.id]);
   useLyricsPrefetch(songs);
   const play = (index = 0, shuffle = false) => {
     const items = songs.map((song) => {
@@ -72,7 +91,7 @@ export default function AlbumPage({
     if (items[index]) onPlay(items[index], items);
   };
   return (
-    <article className="album-page" aria-label={`Release ${details.title}`}>
+    <article className="album-page" aria-label={`Альбом ${details.title}`}>
       <header className="album-hero">
         <img
           className="album-artwork"
@@ -97,12 +116,12 @@ export default function AlbumPage({
             {(album?.artistNames || [seed.artistName]).map((name, index) => (
               <Fragment key={name}>
                 {index > 0 && ", "}
-                <button
+                <Button
                   className="artist-text-link"
                   onClick={() => onArtist(name)}
                 >
                   {name}
-                </button>
+                </Button>
               </Fragment>
             ))}
           </div>
@@ -113,41 +132,59 @@ export default function AlbumPage({
               : ""}
           </p>
           <div className="artist-actions">
-            <button
+            <Button
               className="button button-accent"
               disabled={!songs.length || loading}
               onClick={() => play()}
             >
               <Play size={17} fill="currentColor" />
               Слушать весь альбом
-            </button>
-            <button
+            </Button>
+            <Button
               className="button button-subtle"
               aria-label="Перемешать альбом"
               disabled={!songs.length || loading}
               onClick={() => play(0, true)}
             >
               <Shuffle size={17} />
-            </button>
+            </Button>
+            <DownloadCollection
+              group={{
+                id: `album:${seed.id}:${seed.artistName}`,
+                name: details.title,
+                kind: "album",
+                tracks: songs.map((song) => song.id),
+                album: {
+                  ...seed,
+                  title: details.title,
+                  cover_big: details.cover_big,
+                  cover_medium: details.cover_medium,
+                },
+              }}
+              tracks={songs}
+              jobs={offlineJobs}
+              enqueue={onDownload}
+              open={openDownloads}
+            />
           </div>
         </div>
       </header>
       {loading && (
         <div className="artist-loading" role="status">
-          <LoaderCircle className="spin" size={18} />
+          <Spinner className="spin" size={18} />
           Загружаем полный треклист…
         </div>
       )}
       {error && (
         <div className="artist-notice" role="alert">
           {error}
-          <button
+          <Button
             className="text-button"
             onClick={() => setRevision((value) => value + 1)}
           >
-            <RotateCw size={14} />
+            <Refresh size={14} />
             Повторить
-          </button>
+          </Button>
         </div>
       )}
       <div className="album-tracklist">
@@ -171,15 +208,17 @@ export default function AlbumPage({
             songs.some((item) => (item.discNumber || 1) > 1) ? (
               <h3>Диск {song.discNumber}</h3>
             ) : null}
-            <button
+            <Button
               className={`album-track ${currentId === song.id ? "is-current" : ""}`}
               aria-label={`Слушать ${song.title}`}
               onClick={() => play(index)}
             >
               <span className="album-track-number">
-                {currentId === song.id && playing
-                  ? "♫"
-                  : song.trackNumber || index + 1}
+                {currentId === song.id && playing ? (
+                  <Waveform size={15} />
+                ) : (
+                  song.trackNumber || index + 1
+                )}
               </span>
               <span>
                 <strong>{song.title}</strong>
@@ -187,7 +226,7 @@ export default function AlbumPage({
               </span>
               <time>{time(song.duration)}</time>
               <Play size={14} />
-            </button>
+            </Button>
           </div>
         ))}
       </div>

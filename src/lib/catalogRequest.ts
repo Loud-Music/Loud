@@ -8,6 +8,7 @@ export const catalogOrigins = {
   betterlyrics: "https://api.betterlyrics.org",
   lyricsplus: "https://lyricsplus.binimum.org",
   itunes: "https://itunes.apple.com",
+  appleweb: "https://music.apple.com",
   rmmrevival: "https://lyrics.rmmreviv.al",
   amll: "https://api.amll.dev",
   lrcmux: "https://api.lrcmux.dev",
@@ -24,7 +25,15 @@ async function requestJSON<T>(provider: CatalogAPI, path: string): Promise<T> {
     ? `/catalog-api/${provider}`
     : catalogOrigins[provider];
   const response = await fetch(`${origin}${path}`, {
-    signal: AbortSignal.timeout(25000),
+    signal: AbortSignal.timeout(
+      provider === "deezer" && path.startsWith("/search/artist")
+        ? 3000
+        : provider === "itunes" && path.includes("entity=musicArtist")
+          ? 6000
+          : provider === "appleweb"
+            ? 8000
+            : 25000,
+    ),
   });
   if (!response.ok) throw new Error(`${provider}: ${response.status}`);
   return response.json();
