@@ -31,6 +31,7 @@ import {
 } from "react";
 import AlbumPage from "./components/AlbumPage";
 import ArtistCard from "./components/ArtistCard";
+import LoudArtistsSection from "./components/LoudArtistsSection";
 import ArtistProfile from "./components/ArtistProfile";
 import Catalog from "./components/Catalog";
 import CommunityNotice from "./components/CommunityNotice";
@@ -74,6 +75,7 @@ import { useDiscordPresence } from "./lib/useDiscordPresence";
 import { getPlaybackProgress } from "./lib/playbackProgress";
 import usePlayback from "./lib/usePlayback";
 import useFavorites from "./lib/useFavorites";
+import { usePresaves } from "./lib/usePresaves";
 import useWave from "./lib/useWave";
 const SettingsDialog = lazy(() => import("./components/SettingsDialog"));
 
@@ -96,6 +98,7 @@ export default function App({
   onSwitchAccount: () => void;
 }) {
   const [tracks, setTracks] = useState<Track[]>([]);
+  usePresaves(tracks, setTracks);
   const [view, setView] = useState<View>("Моя волна");
   const wave = useWave(tracks);
   const [waveActive, setWaveActive] = useState(false);
@@ -333,6 +336,12 @@ export default function App({
   );
   const playTrack = useCallback(
     (track: Track, list?: Track[]) => {
+      if (track.availableAt) {
+        notify(
+          "Этот трек ещё не вышел. Открой страницу релиза после его выхода.",
+        );
+        return;
+      }
       setWaveActive(false);
       waveSession.current++;
       if (!track.src && !track.extractorUrl) {
@@ -568,6 +577,10 @@ export default function App({
     }
   }
   function playCatalogTrack(track: Track, list: Track[], waveMode = false) {
+    if (track.availableAt) {
+      notify("Прослушивание откроется в дату выхода релиза.");
+      return;
+    }
     const local = (song: Track) =>
       tracks.find((saved) => saved.id === song.id && saved.downloaded) || song;
     track = local(track);
@@ -982,7 +995,7 @@ export default function App({
                     {view === "Downloads"
                       ? `${offline.pending} в очереди`
                       : view === "Artists"
-                        ? `${artists.length} артистов`
+                        ? `${artists.length} в медиатеке`
                         : `${visible.length} треков${playlist ? " · Плейлист" : ""}`}
                   </p>
                 )}
@@ -1019,6 +1032,8 @@ export default function App({
               }
               name={artistSeed!.name}
               hint={artistSeed?.artist}
+              favorites={favorites}
+              onFavorite={(track) => toggleFavorite(track.id, track)}
               saved={libraryTracks}
               followed={followedArtists.some(
                 (name) => artistKey(name) === artistKey(artistSeed!.name),
@@ -1030,6 +1045,9 @@ export default function App({
               currentId={currentId}
               playing={playing}
             />
+          )}
+          {view === "Artists" && (
+            <LoudArtistsSection saved={libraryTracks} onOpen={openArtist} />
           )}
           {view === "Artists" &&
             (artists.length ? (

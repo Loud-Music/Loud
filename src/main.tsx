@@ -5,6 +5,7 @@ import { initializePersistence, flushPersistence } from "./lib/persistence";
 import "./theme.css";
 import "./styles.css";
 import "./artist.css";
+import "./loudArtist.css";
 import "./layout.css";
 import "./wave.css";
 import "./controls.css";

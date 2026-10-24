@@ -4,6 +4,7 @@ import { Refresh } from "../icons";
 import { invoke } from "@tauri-apps/api/core";
 import { type Artist } from "../lib/artists";
 import { artistPortrait, forgetPortrait } from "../lib/artistPortrait";
+import LoudArtistBadge from "./LoudArtistBadge";
 
 export default function ArtistCard({
   name,
@@ -101,6 +102,7 @@ export default function ArtistCard({
           )}
         </span>
         <h3>{name}</h3>
+        {artist?.catalog === "loud" && <LoudArtistBadge compact />}
         <p>{detail || "Артист"}</p>
       </Button>
       {failed && (

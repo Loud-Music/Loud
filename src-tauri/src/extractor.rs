@@ -85,6 +85,30 @@ fn output(mut cmd: Command) -> Result<Vec<u8>, String> {
 }
 fn track_url(raw: &str) -> Result<String, String> {
     let url = reqwest::Url::parse(raw).map_err(|e| e.to_string())?;
+    if url.scheme() == "https"
+        && matches!(
+            url.host_str(),
+            Some("youtube.com" | "www.youtube.com" | "music.youtube.com")
+        )
+        && url.path() == "/watch"
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+    {
+        let id = url
+            .query_pairs()
+            .find(|(key, _)| key == "v")
+            .map(|(_, value)| value.into_owned())
+            .ok_or("Missing video ID")?;
+        if id.len() == 11
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Ok(format!("https://www.youtube.com/watch?v={id}"));
+        }
+        return Err("Invalid video ID".into());
+    }
     if url.scheme() != "https"
         || !url.host_str().is_some_and(|h| {
             matches!(
@@ -148,6 +172,7 @@ pub async fn lucida_search(
     app: tauri::AppHandle,
     query: String,
     service: Option<String>,
+    fast: Option<bool>,
 ) -> Result<Value, String> {
     if query.trim().is_empty() || query.len() > 300 {
         return Err("Enter an artist or song title".into());
@@ -155,6 +180,13 @@ pub async fn lucida_search(
     let service = service.unwrap_or_else(|| "all".into());
     if !matches!(service.as_str(), "all" | "amazon" | "others") {
         return Err("Unsupported music service".into());
+    }
+    if fast.unwrap_or(false) {
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::lucida_stream::search_fast(&query, &service)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
     }
     if service == "amazon" {
         return tauri::async_runtime::spawn_blocking(move || {
@@ -251,10 +283,19 @@ pub async fn soundcloud_import(app: tauri::AppHandle, url: String) -> Result<Val
     }).await.map_err(|e| e.to_string())?
 }
 #[tauri::command]
-pub async fn extractor_search(app: tauri::AppHandle, query: String) -> Result<Value, String> {
+pub async fn extractor_search(
+    app: tauri::AppHandle,
+    query: String,
+    source: Option<String>,
+) -> Result<Value, String> {
     if query.trim().is_empty() || query.len() > 300 {
         return Err("Enter an artist or song title".into());
     }
+    let youtube = match source.as_deref() {
+        None | Some("soundcloud") => false,
+        Some("youtube") => true,
+        _ => return Err("Unsupported search source".into()),
+    };
     tauri::async_runtime::spawn_blocking(move || {
         let mut cmd = command(&app)?;
         cmd.args([
@@ -263,7 +304,9 @@ pub async fn extractor_search(app: tauri::AppHandle, query: String) -> Result<Va
             "20",
             "--dump-single-json",
         ]);
-        if query.starts_with("https://soundcloud.com/") {
+        if youtube {
+            cmd.arg(format!("ytsearch3:{}", query.trim()));
+        } else if query.starts_with("https://soundcloud.com/") {
             cmd.arg(track_url(&query)?);
         } else {
             cmd.arg(format!("scsearch20:{}", query.trim()));
@@ -372,6 +415,52 @@ fn save_alias(root: &Path, alias: &Path, data: &Value, duration: f64) -> Result<
     fs::rename(temp, alias).map_err(|e| e.to_string())
 }
 
+fn video_chunk(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    offset: u64,
+    expected_total: Option<u64>,
+) -> Result<(reqwest::blocking::Response, u64, u64), String> {
+    let response = client
+        .get(url)
+        .header(
+            reqwest::header::RANGE,
+            format!("bytes={offset}-{}", offset + 524287),
+        )
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .and_then(|r| r.error_for_status())
+        .map_err(|e| e.to_string())?;
+    if response.status().as_u16() != 206 {
+        return Err("Audio server ignored byte range".into());
+    }
+    let range = response
+        .headers()
+        .get(reqwest::header::CONTENT_RANGE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("bytes "))
+        .ok_or("Missing audio byte range")?;
+    let (span, total) = range.split_once('/').ok_or("Invalid audio byte range")?;
+    let (start, end) = span.split_once('-').ok_or("Invalid audio byte range")?;
+    let total = total.parse::<u64>().map_err(|_| "Invalid audio size")?;
+    let start = start.parse::<u64>().map_err(|_| "Invalid audio offset")?;
+    let end = end.parse::<u64>().map_err(|_| "Invalid audio offset")?;
+    if start != offset
+        || end < start
+        || end >= total
+        || end - start >= 524288
+        || total > 200 * 1024 * 1024
+        || expected_total.is_some_and(|value| value != total)
+    {
+        return Err("Audio byte range does not match the recording".into());
+    }
+    let size = end - start + 1;
+    if response.content_length().is_some_and(|value| value != size) {
+        return Err("Audio chunk has an invalid length".into());
+    }
+    Ok((response, total, size))
+}
+
 #[tauri::command]
 pub async fn extractor_cache_stream(
     app: tauri::AppHandle,
@@ -387,6 +476,9 @@ pub async fn extractor_cache_stream(
         && parts[1] == "tracks"
         && parts[3] == "stream"
         && parts[2].chars().all(|ch| ch.is_ascii_alphanumeric());
+    let youtube = parsed
+        .host_str()
+        .is_some_and(|host| host.ends_with(".googlevideo.com"));
     let lucida = parsed.host_str().is_some_and(|h| h.ends_with(".lucida.to"))
         && parts.len() == 5
         && parts[..3] == ["api", "fetch", "request"]
@@ -396,7 +488,7 @@ pub async fn extractor_cache_stream(
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
     if parsed.scheme() != "https"
-        || !(audius || lucida)
+        || !(audius || lucida || youtube)
         || parsed.port().is_some()
         || !parsed.username().is_empty()
         || parsed.password().is_some()
@@ -421,49 +513,73 @@ pub async fn extractor_cache_stream(
             allow_audio(&app, &data)?;
             return Ok(data);
         }
-        let mut response = if lucida {
-            crate::lucida_stream::download(&url)?
+        let client = reqwest::blocking::Client::builder()
+            .user_agent("Mozilla/5.0")
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(180))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() < 5
+                    && attempt.url().scheme() == "https"
+                    && attempt.url().host_str().is_some_and(|host| {
+                        host == "api.audius.co"
+                            || host.ends_with(".audius.co")
+                            || host.ends_with(".googlevideo.com")
+                            || host.ends_with(".r2.cloudflarestorage.com")
+                            || host.ends_with(".lucida.to")
+                    })
+                {
+                    attempt.follow()
+                } else {
+                    attempt.error("Unsupported stream redirect")
+                }
+            }))
+            .build()
+            .map_err(|e| e.to_string())?;
+        let (mut response, mut chunk, total) = if youtube {
+            let (response, total, size) = video_chunk(&client, &url, 0, None)?;
+            (response, Some(size), Some(total))
         } else {
-            let client = reqwest::blocking::Client::builder()
-                .user_agent("Mozilla/5.0")
-                .connect_timeout(std::time::Duration::from_secs(5))
-                .timeout(std::time::Duration::from_secs(180))
-                .redirect(reqwest::redirect::Policy::custom(|attempt| {
-                    if attempt.previous().len() < 5
-                        && attempt.url().scheme() == "https"
-                        && attempt.url().host_str().is_some_and(|host| {
-                            host == "api.audius.co"
-                                || host.ends_with(".audius.co")
-                                || host.ends_with(".r2.cloudflarestorage.com")
-                                || host.ends_with(".lucida.to")
-                        })
-                    {
-                        attempt.follow()
-                    } else {
-                        attempt.error("Unsupported stream redirect")
-                    }
-                }))
-                .build()
-                .map_err(|e| e.to_string())?;
-            client
-                .get(parsed)
-                .send()
-                .and_then(|r| r.error_for_status())
-                .map_err(|e| e.to_string())?
+            let response = if lucida {
+                crate::lucida_stream::download(&url)?
+            } else {
+                client
+                    .get(parsed)
+                    .send()
+                    .and_then(|r| r.error_for_status())
+                    .map_err(|e| e.to_string())?
+            };
+            let total = response.content_length();
+            (response, None, total)
         };
         let limit = 200 * 1024 * 1024;
-        if response.content_length().is_some_and(|size| size > limit) {
+        if total.is_some_and(|size| size > limit) {
             return Err("Stream exceeds cache limit".into());
         }
         let temp = root.join(format!("{key}.part"));
         let length = temp.with_extension("length");
-        if let Some(size) = response.content_length() {
+        if let Some(size) = total {
             fs::write(&length, size.to_string()).map_err(|e| e.to_string())?;
         }
         let result = (|| {
             let mut file = fs::File::create(&temp).map_err(|e| e.to_string())?;
-            let size = std::io::copy(&mut response.by_ref().take(limit + 1), &mut file)
+            let mut size = 0;
+            loop {
+                let copied = std::io::copy(
+                    &mut response.by_ref().take(chunk.unwrap_or(limit) + 1),
+                    &mut file,
+                )
                 .map_err(|e| e.to_string())?;
+                if chunk.is_some_and(|expected| copied != expected) {
+                    return Err("Audio chunk was interrupted".into());
+                }
+                size += copied;
+                if !youtube || total == Some(size) {
+                    break;
+                }
+                let (next, _, count) = video_chunk(&client, &url, size, total)?;
+                response = next;
+                chunk = Some(count);
+            }
             file.flush().map_err(|e| e.to_string())?;
             drop(file);
             if size == 0 || size > limit {
@@ -562,7 +678,11 @@ pub async fn extractor_audio(
             "--max-filesize",
             "200M",
             "--format",
-            "bestaudio",
+            if url.starts_with("https://www.youtube.com/watch?") {
+                "bestaudio[ext=m4a]"
+            } else {
+                "bestaudio"
+            },
             "--print",
             "after_move:filepath",
             "--no-simulate",
@@ -572,7 +692,9 @@ pub async fn extractor_audio(
         .arg("--output")
         .arg(root.join(format!("{key}.%(ext)s")))
         .arg(&url);
-        let result = if url.starts_with("https://soundcloud.com/") {
+        let result = if url.starts_with("https://soundcloud.com/")
+            || url.starts_with("https://www.youtube.com/watch?")
+        {
             output(cmd)
         } else {
             Err("Loading through Lucida".into())
@@ -656,25 +778,42 @@ pub async fn extractor_stream(
     if !duration.is_finite() || duration <= 0.0 {
         return Err("Only full recordings are supported".into());
     }
-    if url.starts_with("https://soundcloud.com/") {
+    let youtube = url.starts_with("https://www.youtube.com/watch?");
+    if url.starts_with("https://soundcloud.com/") || youtube {
         crate::media_tools::ensure_extractor_tool(app.clone()).await?;
     }
     tauri::async_runtime::spawn_blocking(move || {
-        if url.starts_with("https://soundcloud.com/") {
+        if url.starts_with("https://soundcloud.com/") || youtube {
             let attempt = (|| -> Result<Value, String> {
                 let mut cmd = command(&app)?;
-                cmd.args(["--skip-download", "--dump-single-json", "--format", "bestaudio"]).arg(&url);
+                cmd.args(["--skip-download", "--dump-single-json", "--format", if youtube { "bestaudio[ext=m4a]" } else { "bestaudio" }]).arg(&url);
                 let data: Value = serde_json::from_slice(&output(cmd)?).map_err(|e|e.to_string())?;
                 let actual = data["duration"].as_f64().ok_or("Missing full recording duration")?;
                 if actual <= 0.0 || (actual - duration).abs() > 3.0 { return Err("Source returned a preview or different recording".into()); }
                 let raw = data["url"].as_str().ok_or("Missing audio stream")?;
                 let stream = reqwest::Url::parse(raw).map_err(|e|e.to_string())?;
-                if stream.scheme() != "https" || !stream.host_str().is_some_and(|h|h.ends_with(".sndcdn.com") || h.ends_with(".soundcloud.cloud")) { return Err("Unsupported audio stream host".into()); }
+                if stream.scheme() != "https" || !stream.host_str().is_some_and(|h|h.ends_with(".sndcdn.com") || h.ends_with(".soundcloud.cloud") || (youtube && h.ends_with(".googlevideo.com"))) { return Err("Unsupported audio stream host".into()); }
                 let codec = data["acodec"].as_str().unwrap_or("");
                 let format = if codec.starts_with("mp4a") || codec.contains("aac") { "AAC" } else if codec.contains("mp3") { "MP3" } else if codec.contains("flac") { "FLAC" } else { "Audio" };
                 Ok(json!({"url":raw,"duration":actual,"format":format,"hls":data["protocol"].as_str().is_some_and(|p|p.starts_with("m3u8")),"size":0,"key":""}))
             })();
-            match attempt { Ok(result) => return Ok(result), Err(error) if direct_only.unwrap_or(false) => return Err(error), Err(_) => {} }
+            match attempt {
+                Ok(mut result) => {
+                    if youtube {
+                        let raw = result["url"].as_str().ok_or("Missing audio stream")?.to_owned();
+                        result["cacheUrl"] = json!(raw);
+                        result["cacheKey"] = json!(format!("{:x}", Sha256::digest(raw.as_bytes())));
+                        if !prepare_only.unwrap_or(false) {
+                            let (local, format) = crate::stream_proxy::register(app.clone(), raw, duration, recording)?;
+                            result["url"] = json!(local);
+                            result["format"] = json!(format);
+                        }
+                    }
+                    return Ok(result);
+                }
+                Err(error) if youtube || direct_only.unwrap_or(false) => return Err(error),
+                Err(_) => {}
+            }
         }
         let began = std::time::Instant::now();
         let mut data = crate::lucida_stream::prepare(&url, duration)?;

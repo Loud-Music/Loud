@@ -66,7 +66,9 @@ fn allowed(url: &reqwest::Url) -> bool {
         && url.host_str().is_some_and(|host| {
             [
                 "lucida.to",
+                "api.mambo.wtf",
                 "sndcdn.com",
+                "googlevideo.com",
                 "soundcloud.cloud",
                 "archive.org",
                 "wikimedia.org",

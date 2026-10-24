@@ -14,6 +14,7 @@ export type Source =
   | "Jamendo"
   | "Deezer"
   | "SoundCloud"
+  | "YouTube Music"
   | "Lucida";
 interface AudioCandidate {
   url: string;
@@ -22,6 +23,10 @@ interface AudioCandidate {
   duration: number;
 }
 export interface Track {
+  availableAt?: string;
+  loudReleaseId?: number;
+  lyricsUrl?: string;
+  loudArtistIds?: number[];
   artists?: string[];
   fullRecording?: boolean;
   discNumber?: number;

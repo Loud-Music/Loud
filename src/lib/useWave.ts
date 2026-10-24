@@ -40,7 +40,7 @@ async function bounded<T>(
 const searches = new Map<string, { at: number; albums: CatalogAlbum[] }>();
 function suitableTrack(track: Track) {
   return (
-    track.source !== "Loud" &&
+    (track.source !== "Loud" || !!track.loudArtistIds?.length) &&
     Boolean(track.src || track.extractorUrl) &&
     !track.preview &&
     track.duration >= 40 &&
@@ -81,7 +81,7 @@ export default function useWave(library: Track[]) {
     });
   }, []);
   const feedback = useCallback((track: Track, event: Feedback) => {
-    if (track.source === "Loud") return;
+    if (track.source === "Loud" && !track.loudArtistIds?.length) return;
     setError("");
     setProfile((old) => {
       const next = updateTaste(old, track, event);

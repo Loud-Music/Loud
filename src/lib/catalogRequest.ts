@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export const catalogOrigins = {
+  loud: "https://api.mambo.wtf",
   deezer: "https://api.deezer.com",
   audius: "https://api.audius.co",
   wikimedia: "https://commons.wikimedia.org",
@@ -26,13 +27,15 @@ async function requestJSON<T>(provider: CatalogAPI, path: string): Promise<T> {
     : catalogOrigins[provider];
   const response = await fetch(`${origin}${path}`, {
     signal: AbortSignal.timeout(
-      provider === "deezer" && path.startsWith("/search/artist")
-        ? 3000
-        : provider === "itunes" && path.includes("entity=musicArtist")
-          ? 6000
-          : provider === "appleweb"
-            ? 8000
-            : 25000,
+      provider === "loud"
+        ? 2500
+        : provider === "deezer" && path.startsWith("/search/artist")
+          ? 3000
+          : provider === "itunes" && path.includes("entity=musicArtist")
+            ? 6000
+            : provider === "appleweb"
+              ? 8000
+              : 25000,
     ),
   });
   if (!response.ok) throw new Error(`${provider}: ${response.status}`);
@@ -44,7 +47,8 @@ export async function catalogJSON<T>(
 ): Promise<T> {
   const key = `${provider}${path}`;
   const old = pending.get(key);
-  if (old && Date.now() - old.at < 180000) return old.value as Promise<T>;
+  if (old && Date.now() - old.at < (provider === "loud" ? 30000 : 180000))
+    return old.value as Promise<T>;
   const value = requestJSON<T>(provider, path).catch((error) => {
     pending.delete(key);
     throw error;

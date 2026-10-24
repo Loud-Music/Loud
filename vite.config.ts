@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { get } from "node:https";
 import { catalogOrigins } from "./src/lib/catalogRequest";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     {
@@ -11,7 +11,7 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use("/catalog-api", (request, response) => {
           const match = request.url?.match(
-            /^\/(audius|wikimedia|ccmixter|openverse|lrclib|betterlyrics|lyricsplus|amll|lrcmux|itunes|appleweb|rmmrevival|deezer)(\/.*)$/,
+            /^\/(loud|audius|wikimedia|ccmixter|openverse|lrclib|betterlyrics|lyricsplus|amll|lrcmux|itunes|appleweb|rmmrevival|deezer)(\/.*)$/,
           );
           if (!match || request.method !== "GET") {
             response.writeHead(404).end();
@@ -123,5 +123,10 @@ export default defineConfig({
     strictPort: true,
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
-  build: { target: "es2022" },
-});
+  build: {
+    target: "es2022",
+    outDir: mode === "distributor" ? ".release/distributor-web" : "dist",
+    rollupOptions:
+      mode === "distributor" ? { input: "distributor.html" } : undefined,
+  },
+}));

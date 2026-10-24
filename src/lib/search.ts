@@ -6,8 +6,10 @@ import { catalogJSON } from "./catalogRequest";
 import { searchMixter, searchJamendo } from "./additionalCatalogs";
 import { searchExtracted, searchLucida } from "./extractor";
 import { tasteGenres } from "./recommendations";
+import { loudTracks } from "./loudCatalog";
 
 export const providers = [
+  "Loud",
   "Archive",
   "Live Music Archive",
   "Audius",
@@ -207,6 +209,7 @@ async function searchArchiveTracks(
 }
 
 const adapters: Record<Provider, (query: string) => Promise<Track[]>> = {
+  Loud: loudTracks,
   Archive: searchArchiveTracks,
   "Live Music Archive": (query) => searchArchiveTracks(query, true),
   Audius: searchAudius,

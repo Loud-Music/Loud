@@ -29,6 +29,7 @@ import ArtistCard from "./ArtistCard";
 import SelectField from "./SelectField";
 import { appleArtistImage } from "../lib/appleCatalog";
 import { artistPortrait } from "../lib/artistPortrait";
+import LoudArtistProfile from "./LoudArtistProfile";
 
 export default function ArtistProfile({
   name,
@@ -42,6 +43,8 @@ export default function ArtistProfile({
   onAlbum,
   currentId,
   playing,
+  favorites,
+  onFavorite,
 }: {
   name: string;
   hint?: Artist;
@@ -54,6 +57,8 @@ export default function ArtistProfile({
   onAlbum?: (release: ArtistRelease, artist: string) => void;
   currentId: string;
   playing: boolean;
+  favorites: string[];
+  onFavorite: (track: Track) => Promise<void>;
 }) {
   const [profile, setProfile] =
     useState<Awaited<ReturnType<typeof artistProfile>>>();
@@ -107,6 +112,7 @@ export default function ArtistProfile({
     let live = true;
     setPortrait(undefined);
     setPhotoFailed(false);
+    if ((profile?.artist || hint)?.catalog === "loud") return;
     void artistPortrait(name, profile?.artist || hint, revision > 0).then(
       (image) => {
         if (live) setPortrait(image);
@@ -316,6 +322,28 @@ export default function ArtistProfile({
       setPaging(false);
     }
   };
+  if (artist?.catalog === "loud" || hint?.catalog === "loud")
+    return (
+      <LoudArtistProfile
+        name={name}
+        hint={hint}
+        profile={profile}
+        loading={loading}
+        error={error}
+        retry={() => setRevision((value) => value + 1)}
+        saved={saved}
+        followed={followed}
+        onFollow={onFollow}
+        onPlay={onPlay}
+        onAdd={onAdd}
+        onArtist={onArtist}
+        onAlbum={onAlbum}
+        currentId={currentId}
+        playing={playing}
+        favorites={favorites}
+        onFavorite={onFavorite}
+      />
+    );
   return (
     <article className="artist-page" aria-label={`Профиль артиста ${name}`}>
       <header className={`artist-hero ${loading ? "is-loading" : ""}`}>

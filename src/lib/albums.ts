@@ -2,6 +2,7 @@ import { catalogJSON } from "./catalogRequest";
 import { artistKey, releaseTracks, type ArtistRelease } from "./artists";
 import type { Track } from "./library";
 import { offlineAlbum } from "./offlineStore";
+import { loudRelease } from "./loudCatalog";
 
 export interface AlbumSeed extends ArtistRelease {
   artistName: string;
@@ -26,6 +27,22 @@ export function parseAlbumRoute(value: string): AlbumSeed {
 export async function loadAlbum(seed: AlbumSeed, saved: Track[]) {
   const offline = offlineAlbum(seed, saved);
   if (offline) return offline;
+  if (String(seed.id).startsWith("loud:")) {
+    const release = await loudRelease(String(seed.id));
+    return {
+      ...seed,
+      ...release,
+      artistNames: [
+        ...new Set(
+          (release.tracks || []).flatMap(
+            (track) => track.artists || [track.artist],
+          ),
+        ),
+      ],
+      tracks: release.tracks || [],
+      local: false,
+    };
+  }
   if (String(seed.id).startsWith("apple:")) {
     const tracks = await releaseTracks(seed);
     if (!tracks.length)

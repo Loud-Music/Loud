@@ -62,6 +62,8 @@ async function applePortrait(name: string) {
   return image;
 }
 export function artistPortrait(name: string, hint?: Artist, retry = false) {
+  if (hint?.catalog === "loud")
+    return Promise.resolve(hint.picture_xl || hint.picture_big);
   const key = artistIdentity(name, hint);
   if (retry) pending.delete(key);
   const existing = pending.get(key);

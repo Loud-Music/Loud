@@ -189,10 +189,21 @@ fn compact_data(text: &str) -> Result<Value, String> {
     Err("Unsupported compact metadata format".into())
 }
 
-static AMAZON_COUNTRY: std::sync::Mutex<Option<(Instant, String)>> = std::sync::Mutex::new(None);
+type Countries = std::collections::HashMap<String, (Instant, String)>;
+static COUNTRIES: OnceLock<std::sync::Mutex<Countries>> = OnceLock::new();
+
 pub fn search_amazon(query: &str) -> Result<Value, String> {
+    search_service(query, "amazon")
+}
+
+fn search_service(query: &str, service: &str) -> Result<Value, String> {
     let client = client()?;
-    let old = AMAZON_COUNTRY.lock().map_err(|e| e.to_string())?.clone();
+    let cache = COUNTRIES.get_or_init(|| std::sync::Mutex::new(Countries::new()));
+    let old = cache
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(service)
+        .cloned();
     let country = if let Some((_, country)) =
         old.filter(|(at, _)| at.elapsed() < Duration::from_secs(300))
     {
@@ -200,36 +211,38 @@ pub fn search_amazon(query: &str) -> Result<Value, String> {
     } else {
         let response = client
             .get("https://lucida.to/api/load")
-            .query(&[("url", "/api/countries?service=amazon")])
-            .timeout(Duration::from_secs(3))
+            .query(&[("url", format!("/api/countries?service={service}"))])
+            .timeout(Duration::from_millis(1800))
             .send()
             .map_err(|e| e.to_string())?;
         let data: Value = serde_json::from_str(&body(response)?).map_err(|e| e.to_string())?;
         let countries = data["countries"]
             .as_array()
-            .ok_or("Missing Amazon countries")?;
+            .ok_or("Missing service countries")?;
         let country = countries
             .iter()
             .find(|value| value["code"] == "US")
             .or_else(|| countries.first())
             .and_then(|value| value["code"].as_str())
             .filter(|country| country.len() == 2 && country.bytes().all(|b| b.is_ascii_uppercase()))
-            .ok_or("No Amazon servers available")?
+            .ok_or("No servers available for this service")?
             .to_owned();
-        *AMAZON_COUNTRY.lock().map_err(|e| e.to_string())? =
-            Some((Instant::now(), country.clone()));
+        cache
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(service.to_owned(), (Instant::now(), country.clone()));
         country
     };
     let response = client
         .get("https://lucida.to/search/__data.json")
         .query(&[
             ("query", query),
-            ("service", "amazon"),
+            ("service", service),
             ("country", country.as_str()),
             ("x-sveltekit-invalidated", "01"),
         ])
         .header("Accept-Encoding", "gzip")
-        .timeout(Duration::from_secs(5))
+        .timeout(Duration::from_millis(3200))
         .send()
         .map_err(|e| e.to_string())?;
     let data = compact_data(&body(response)?)?;
@@ -237,24 +250,69 @@ pub fn search_amazon(query: &str) -> Result<Value, String> {
     if result["success"] != true {
         return Err(result["error"]
             .as_str()
-            .unwrap_or("Amazon search unavailable")
+            .unwrap_or("Music search unavailable")
             .into());
     }
     let tracks: Vec<Value> = result["results"]["tracks"]
         .as_array()
-        .ok_or("Missing Amazon tracks")?
+        .ok_or("Missing service tracks")?
         .iter()
         .take(25)
         .cloned()
         .map(|mut track| {
-            track["service"] = json!("amazon");
+            track["service"] = json!(service);
             track["country"] = json!(country);
             track
         })
         .collect();
     Ok(
-        json!({"catalogs":[{"service":"amazon","country":country,"count":tracks.len()}],"tracks":tracks}),
+        json!({"catalogs":[{"service":service,"country":country,"count":tracks.len()}],"tracks":tracks}),
     )
+}
+
+pub fn search_fast(query: &str, service: &str) -> Result<Value, String> {
+    let services: &[&str] = match service {
+        "amazon" => return search_amazon(query),
+        "others" => &["qobuz", "tidal", "deezer", "yandex"],
+        "all" => &["amazon", "qobuz", "tidal", "deezer", "yandex", "soundcloud"],
+        _ => return Err("Unsupported music service".into()),
+    };
+    let results = std::thread::scope(|scope| {
+        let jobs: Vec<_> = services
+            .iter()
+            .map(|service| {
+                (
+                    *service,
+                    scope.spawn(move || search_service(query, service)),
+                )
+            })
+            .collect();
+        jobs.into_iter()
+            .map(|(service, job)| {
+                (
+                    service,
+                    job.join()
+                        .unwrap_or_else(|_| Err("Catalog request failed".into())),
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+    let mut tracks = Vec::new();
+    let mut catalogs = Vec::new();
+    for (service, result) in results {
+        match result {
+            Ok(data) => {
+                if let Some(items) = data["tracks"].as_array() {
+                    tracks.extend(items.iter().cloned());
+                }
+                if let Some(items) = data["catalogs"].as_array() {
+                    catalogs.extend(items.iter().cloned());
+                }
+            }
+            Err(error) => catalogs.push(json!({"service":service,"error":error,"count":0})),
+        }
+    }
+    Ok(json!({"tracks":tracks,"catalogs":catalogs}))
 }
 
 fn metadata(client: &Client, url: &str) -> Result<(Value, usize, bool), String> {

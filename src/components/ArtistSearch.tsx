@@ -29,7 +29,7 @@ export default function ArtistSearch({
       <div className="artist-grid">
         {artists.map((artist) => (
           <ArtistCard
-            key={artist.id}
+            key={`${artist.catalog || "deezer"}:${artist.id}`}
             name={artist.name}
             artist={artist}
             onOpen={onOpen}

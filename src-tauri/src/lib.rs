@@ -93,6 +93,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             community::open_community,
+            community::open_artist_link,
             offline::offline_download,
             offline::offline_cover,
             offline::offline_pause,

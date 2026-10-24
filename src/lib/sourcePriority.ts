@@ -3,6 +3,7 @@ import type { Track } from "./library";
 export function sourcePriority(
   track: Pick<Track, "source" | "extractorUrl" | "src" | "playbackSource">,
 ) {
+  if (track.source === "Loud") return -1;
   try {
     const host = new URL(
       track.playbackSource || track.extractorUrl || track.src || "",

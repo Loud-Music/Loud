@@ -103,6 +103,13 @@ export const Download = createIcon(
     <path d="M4 17.4v1.4c0 1.4.7 2.1 2.2 2.1h11.6c1.5 0 2.2-.7 2.2-2.1v-1.4" />
   </>,
 );
+export const Upload = createIcon(
+  "upload",
+  <>
+    <path d="M12 16.2 12.5 3.4m-5 4.4 4.3-4.5c.4-.4 1-.4 1.4 0l4.6 4.5" />
+    <path d="M4 17.4v1.4c0 1.4.7 2.1 2.2 2.1h11.6c1.5 0 2.2-.7 2.2-2.1v-1.4" />
+  </>,
+);
 export const Check = createIcon(
   "check",
   <>

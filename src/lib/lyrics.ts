@@ -168,6 +168,8 @@ function parsePlus(payload: PlusPayload): LyricLine[] {
     .sort((a, b) => a.time - b.time);
 }
 export function loadKaraoke(track: Track): Promise<Lyrics | undefined> {
+  if (track.availableAt) return Promise.resolve(undefined);
+  if (track.source === "Loud" && track.lyricsUrl) return loadLyrics(track);
   return cachedLyrics("words", track, () => fetchKaraoke(track));
 }
 async function fetchKaraoke(track: Track): Promise<Lyrics | undefined> {
@@ -297,10 +299,29 @@ function matchingLyrics(track: Track, entries: Lyrics[]): Lyrics | undefined {
     )[0];
 }
 export function loadLyrics(track: Track): Promise<Lyrics | undefined> {
+  if (track.availableAt) return Promise.resolve(undefined);
+  if (track.source === "Loud" && /^loud:[1-9]\d*$/.test(track.id))
+    return fetchLyrics(track);
   return cachedLyrics("lines", track, () => fetchLyrics(track));
 }
 async function fetchLyrics(track: Track): Promise<Lyrics | undefined> {
   if (!track.id) return;
+  if (track.source === "Loud" && /^loud:[1-9]\d*$/.test(track.id)) {
+    const own = await catalogJSON<{ syncedLyrics?: string; source?: string }>(
+      "loud",
+      `/v1/tracks/${track.id.slice(5)}/lyrics`,
+    ).catch(() => undefined);
+    if (own?.syncedLyrics)
+      return {
+        id: Number(track.id.slice(5)),
+        trackName: track.title,
+        artistName: track.artist,
+        duration: track.duration,
+        syncedLyrics: own.syncedLyrics,
+        source: "LOUD",
+        sourceUrl: own.source === "uploaded" ? undefined : own.source,
+      };
+  }
   const title = lyricTitle(track);
   const params = new URLSearchParams({
     artist_name: track.artist,
