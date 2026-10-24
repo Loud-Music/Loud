@@ -39,6 +39,7 @@ fn allowed_url(url: &reqwest::Url) -> bool {
                 || matches!(
                     host,
                     "api.audius.co"
+                        | "api.mambo.wtf"
                         | "api.deezer.com"
                         | "commons.wikimedia.org"
                         | "upload.wikimedia.org"
@@ -189,6 +190,7 @@ pub async fn catalog_json(
     path: String,
 ) -> Result<serde_json::Value, String> {
     let origin = match provider.as_str() {
+        "loud" if path.starts_with("/v1/artists?") || path.starts_with("/v1/tracks?") || ["/v1/artists/", "/v1/releases/"].iter().any(|prefix| path.strip_prefix(prefix).is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))) || path.strip_prefix("/v1/tracks/").and_then(|id| id.strip_suffix("/lyrics")).is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit())) => "https://api.mambo.wtf",
         "lrclib" if path.starts_with("/api/get?") || path.starts_with("/api/search?") => {
             "https://lrclib.net"
         }
@@ -234,7 +236,7 @@ pub async fn catalog_json(
         let result: Result<serde_json::Value,String> = (|| {
         let response = client()?
             .get(format!("{origin}{path}"))
-            .timeout(Duration::from_secs(if provider == "deezer" { 3 } else if provider == "appleweb" { 8 } else if provider == "itunes" && path.contains("entity=musicArtist") { 6 } else { 30 }))
+            .timeout(Duration::from_secs(if provider == "loud" { 2 } else if provider == "deezer" { 3 } else if provider == "appleweb" { 8 } else if provider == "itunes" && path.contains("entity=musicArtist") { 6 } else { 30 }))
             .send()
             .map_err(|e| e.to_string())?;
         if matches!(provider.as_str(), "rmmrevival" | "betterlyrics" | "lyricsplus" | "lrcmux") && matches!(response.status().as_u16(), 403 | 429) {

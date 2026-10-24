@@ -35,12 +35,13 @@ export default function useFavorites(
   }, []);
 
   const toggleFavorite = useCallback(
-    async (id: string) => {
+    async (id: string, candidate?: Track) => {
       if (saving.current.has(id)) return;
       const liked = favorites.includes(id);
       const track =
         tracks.find((track) => track.id === id) ||
-        (selected?.id === id ? selected : undefined);
+        (selected?.id === id ? selected : undefined) ||
+        (candidate?.id === id ? candidate : undefined);
       if (!liked && !track) {
         notify("Не удалось сохранить избранное: запись песни не загружена.");
         return;

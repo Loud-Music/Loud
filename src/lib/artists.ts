@@ -3,15 +3,26 @@ import { trackArtists, type Track } from "./library";
 import { appleAlbum, appleArtistCatalog } from "./appleCatalog";
 import { appleWebArtists, appleWebProfile } from "./appleWeb";
 import { persistentGet, persistentSet } from "./persistence";
+import { loudArtists, loudArtistProfile, loudRelease } from "./loudCatalog";
 
 export interface Artist {
   id: number;
   name: string;
   picture_xl?: string;
   picture_big?: string;
-  catalog?: "apple";
+  catalog?: "apple" | "loud";
+  banner?: string;
+  bio?: string;
+  description?: string;
+  genres?: string[];
+  links?: { label: string; url: string }[];
+  distributor?: { id: number; name: string };
 }
 export interface ArtistRelease {
+  publishAt?: string;
+  presave?: boolean;
+  available?: boolean;
+  distributor?: { id: number; name: string };
   id: number | string;
   title: string;
   cover_big?: string;
@@ -79,11 +90,16 @@ async function deezerArtists(query: string): Promise<Artist[]> {
 }
 export async function searchArtists(query: string): Promise<Artist[]> {
   if (!query.trim()) return [];
-  try {
-    const artists = await deezerArtists(query);
-    if (artists.length) return artists;
-  } catch {}
-  return appleWebArtists(query);
+  const [own, external] = await Promise.allSettled([
+    loudArtists(query),
+    deezerArtists(query)
+      .catch(() => [] as Artist[])
+      .then((artists) => (artists.length ? artists : appleWebArtists(query))),
+  ]);
+  return [
+    ...(own.status === "fulfilled" ? own.value : []),
+    ...(external.status === "fulfilled" ? external.value : []),
+  ];
 }
 export async function findArtist(name: string): Promise<Artist | undefined> {
   return (await deezerArtists(name)).find(
@@ -153,6 +169,8 @@ export async function deezerTrack(id: string): Promise<Track | undefined> {
 }
 export async function releaseTracks(release: ArtistRelease) {
   if (Array.isArray(release.tracks)) return release.tracks;
+  if (String(release.id).startsWith("loud:"))
+    return (await loudRelease(String(release.id))).tracks || [];
   if (String(release.id).startsWith("apple:"))
     return appleAlbum(String(release.id).slice(6));
   const items: CatalogSong[] = [];
@@ -241,7 +259,7 @@ async function appleProfile(name: string) {
   };
 }
 
-interface ArtistCatalog {
+export interface ArtistCatalog {
   artist: Artist;
   songs: Track[];
   releases: ArtistRelease[];
@@ -300,13 +318,13 @@ export async function artistProfile(
     return cached;
   const existing = profileRequests.get(key);
   if (existing) return existing;
-  if (refresh) clearCatalogCache(["deezer", "itunes", "appleweb"]);
+  if (refresh) clearCatalogCache(["deezer", "itunes", "appleweb", "loud"]);
   const useful = (profile: ArtistCatalog | undefined) => {
     if (!profile || (!profile.songs.length && !profile.releases.length))
       throw new Error("Каталог артиста недоступен");
     return profile;
   };
-  const load =
+  const external = () =>
     hint && hint.catalog !== "apple"
       ? deezerProfile(name, hint).then(useful)
       : appleWebProfile(name, hint, saved)
@@ -318,6 +336,23 @@ export async function artistProfile(
               appleProfile(name).then(useful),
             ]);
           });
+  const fallback = hint?.catalog === "loud" ? undefined : external();
+  void fallback?.catch(() => {});
+  const load =
+    hint?.catalog === "loud"
+      ? loudArtistProfile(hint.id)
+      : !hint
+        ? loudArtists(name)
+            .catch(() => [] as Artist[])
+            .then((artists) => {
+              const exact = artists.filter(
+                (artist) => artistKey(artist.name) === artistKey(name),
+              );
+              return exact.length === 1
+                ? loudArtistProfile(exact[0].id)
+                : fallback!;
+            })
+        : fallback!;
   const request = load
     .then((profile) => {
       const entries = storedProfiles();

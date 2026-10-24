@@ -13,7 +13,7 @@ export function parseArtistRoute(value: string): {
       typeof item.name === "string" &&
       Number.isSafeInteger(item.id) &&
       item.id > 0 &&
-      (!item.catalog || item.catalog === "apple")
+      (!item.catalog || item.catalog === "apple" || item.catalog === "loud")
     )
       return {
         name: item.name,

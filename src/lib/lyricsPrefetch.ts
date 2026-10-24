@@ -24,7 +24,7 @@ function drain() {
   }
 }
 export function prepareLyrics(track: Track, priority = false) {
-  if (!track.id || track.preview) return;
+  if (!track.id || track.preview || track.availableAt) return;
   const key = keyFor(track);
   if (!waiting.has(key) && Date.now() - (attempted.get(key) || 0) < 60000)
     return;

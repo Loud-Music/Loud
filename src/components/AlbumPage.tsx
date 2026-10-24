@@ -12,6 +12,7 @@ import { Play, Spinner, Refresh, Shuffle, Waveform } from "../icons";
 import { loadAlbum, type AlbumSeed } from "../lib/albums";
 import { recordingKey, time, type Track } from "../lib/library";
 import DownloadCollection from "./DownloadCollection";
+import ReleaseCountdown from "./ReleaseCountdown";
 import type { OfflineGroup, OfflineJob } from "../lib/offlineStore";
 import "../offline.css";
 
@@ -73,9 +74,11 @@ export default function AlbumPage({
   }, [songs[0]?.id]);
   useLyricsPrefetch(songs);
   const play = (index = 0, shuffle = false) => {
+    if (album?.available === false) return;
     const items = songs.map((song) => {
       const existing = saved.find(
         (item) =>
+          !item.availableAt &&
           recordingKey(item) === recordingKey(song) &&
           Math.abs(item.duration - song.duration) < 3,
       );
@@ -134,7 +137,7 @@ export default function AlbumPage({
           <div className="artist-actions">
             <Button
               className="button button-accent"
-              disabled={!songs.length || loading}
+              disabled={!songs.length || loading || details.available === false}
               onClick={() => play()}
             >
               <Play size={17} fill="currentColor" />
@@ -143,30 +146,36 @@ export default function AlbumPage({
             <Button
               className="button button-subtle"
               aria-label="Перемешать альбом"
-              disabled={!songs.length || loading}
+              disabled={!songs.length || loading || details.available === false}
               onClick={() => play(0, true)}
             >
               <Shuffle size={17} />
             </Button>
-            <DownloadCollection
-              group={{
-                id: `album:${seed.id}:${seed.artistName}`,
-                name: details.title,
-                kind: "album",
-                tracks: songs.map((song) => song.id),
-                album: {
-                  ...seed,
-                  title: details.title,
-                  cover_big: details.cover_big,
-                  cover_medium: details.cover_medium,
-                },
-              }}
-              tracks={songs}
-              jobs={offlineJobs}
-              enqueue={onDownload}
-              open={openDownloads}
-            />
+            {details.available !== false && (
+              <DownloadCollection
+                group={{
+                  id: `album:${seed.id}:${seed.artistName}`,
+                  name: details.title,
+                  kind: "album",
+                  tracks: songs.map((song) => song.id),
+                  album: {
+                    ...seed,
+                    title: details.title,
+                    cover_big: details.cover_big,
+                    cover_medium: details.cover_medium,
+                  },
+                }}
+                tracks={songs}
+                jobs={offlineJobs}
+                enqueue={onDownload}
+                open={openDownloads}
+              />
+            )}
           </div>
+          <ReleaseCountdown
+            at={details.available === false ? details.publishAt : undefined}
+            onAvailable={() => setRevision((value) => value + 1)}
+          />
         </div>
       </header>
       {loading && (

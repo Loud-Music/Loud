@@ -167,5 +167,9 @@ export async function importLibrary(
   );
 }
 export function sourceLabel(source: Source) {
-  return source === "Local" ? "Локальные файлы" : source;
+  return source === "Local"
+    ? "Локальные файлы"
+    : source === "Loud"
+      ? "LOUD"
+      : source;
 }

@@ -2,7 +2,7 @@ import { playbackLog } from "./playbackLog";
 import { sourcePriority } from "./sourcePriority";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { chooseStream, sameRecording } from "./streamResolver";
-import { trackArtists, type Track } from "./library";
+import { readSetting, saveSetting, trackArtists, type Track } from "./library";
 import { catalogJSON } from "./catalogRequest";
 
 interface ExtractedTrack {
@@ -19,12 +19,19 @@ interface ExtractedTrack {
 }
 function extractedTracks(
   data: { entries?: ExtractedTrack[] } & Partial<ExtractedTrack>,
+  youtube = false,
 ): Track[] {
   return (data.entries || (data.id ? [data as ExtractedTrack] : [])).flatMap(
     (item) => {
+      const url = youtube
+        ? /^[a-zA-Z0-9_-]{11}$/.test(item.id)
+          ? `https://www.youtube.com/watch?v=${item.id}`
+          : undefined
+        : item.webpage_url;
       if (
-        !item.webpage_url ||
-        !/^https:\/\/soundcloud\.com\/[\w-]+\/[\w-]+$/.test(item.webpage_url) ||
+        !url ||
+        (!youtube &&
+          !/^https:\/\/soundcloud\.com\/[\w-]+\/[\w-]+$/.test(url)) ||
         !item.duration ||
         item.duration <= 30 ||
         ["premium_only", "subscriber_only", "private", "needs_auth"].includes(
@@ -34,29 +41,37 @@ function extractedTracks(
         return [];
       return [
         {
-          id: `soundcloud:${item.id}`,
+          id: `${youtube ? "youtube" : "soundcloud"}:${item.id}`,
           title: item.title,
           artist: item.artist || item.uploader || "Неизвестный исполнитель",
           album: item.album || item.title,
           duration: item.duration,
-          source: "SoundCloud" as const,
+          source: youtube
+            ? ("YouTube Music" as const)
+            : ("SoundCloud" as const),
           format: "Аудио",
           cover:
             item.thumbnail ||
             item.thumbnails?.at(-1)?.url ||
             "/covers/imported.svg",
-          src: item.webpage_url,
-          extractorUrl: item.webpage_url,
-          attributionUrl: item.webpage_url,
+          src: url,
+          extractorUrl: url,
+          attributionUrl: url,
           downloadAllowed: true,
         },
       ];
     },
   );
 }
-export async function searchExtracted(query: string) {
+export async function searchExtracted(
+  query: string,
+  source: "soundcloud" | "youtube" = "soundcloud",
+) {
   if (!("__TAURI_INTERNALS__" in window)) return [];
-  return extractedTracks(await invoke("extractor_search", { query }));
+  return extractedTracks(
+    await invoke("extractor_search", { query, source }),
+    source === "youtube",
+  );
 }
 interface AudioFile {
   cacheKey?: string;
@@ -80,6 +95,69 @@ const audioCacheIdentity = (track: Track) =>
       value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim(),
     ),
   );
+interface SourceHint {
+  url: string;
+  duration: number;
+  quality?: "lossless" | "lossy";
+  at: number;
+}
+function savedSources(track: Track) {
+  const sources = readSetting<Record<string, SourceHint[]>>(
+    "playback-sources:v1",
+    {},
+  );
+  return (sources[audioCacheIdentity(track)] || []).filter(
+    (hint) =>
+      Date.now() - hint.at < 30 * 86400000 &&
+      Math.abs(hint.duration - track.duration) <= 3,
+  );
+}
+function rememberSource(track: Track, resolved: Track) {
+  const url = resolved.playbackSource;
+  if (!url) return;
+  const host = new URL(url).hostname;
+  if (
+    !/^music\.amazon\./.test(host) &&
+    ![
+      "soundcloud.com",
+      "www.youtube.com",
+      "open.qobuz.com",
+      "play.qobuz.com",
+      "www.qobuz.com",
+      "tidal.com",
+      "listen.tidal.com",
+      "deezer.com",
+      "www.deezer.com",
+      "music.yandex.ru",
+      "music.yandex.com",
+    ].includes(host)
+  )
+    return;
+  const sources = readSetting<Record<string, SourceHint[]>>(
+    "playback-sources:v1",
+    {},
+  );
+  const key = audioCacheIdentity(track);
+  const hint: SourceHint = {
+    url,
+    duration: resolved.duration,
+    quality: resolved.format === "FLAC" ? "lossless" : "lossy",
+    at: Date.now(),
+  };
+  sources[key] = [
+    hint,
+    ...(sources[key] || []).filter((hint) => hint.url !== url),
+  ].slice(0, 3);
+  saveSetting(
+    "playback-sources:v1",
+    Object.fromEntries(
+      Object.entries(sources)
+        .sort((a, b) => (b[1][0]?.at || 0) - (a[1][0]?.at || 0))
+        .slice(0, 256),
+    ),
+  );
+}
+
 const streamCaching = new Set<string>();
 const upgrading = new Map<string, number>();
 async function warmLossless(track: Track) {
@@ -87,7 +165,11 @@ async function warmLossless(track: Track) {
   if (Date.now() < (upgrading.get(key) || 0)) return;
   upgrading.set(key, Date.now() + 300000);
   try {
-    const candidates = await searchLucida(`${track.artist} ${track.title}`);
+    const candidates = await queryLucida(
+      `${trackArtists(track)[0] || track.artist} ${track.title}`,
+      "amazon",
+      true,
+    );
     const candidate =
       candidates
         .filter(
@@ -96,12 +178,12 @@ async function warmLossless(track: Track) {
         .sort((a, b) => sourcePriority(a) - sourcePriority(b))[0] ||
       (sourcePriority(track) < 2 ? track : undefined);
     if (!candidate?.extractorUrl) return;
-    await invoke("extractor_audio", {
+    const file = await invoke<AudioFile>("extractor_stream", {
       url: candidate.extractorUrl,
       duration: track.duration,
       recording: key,
     });
-    playbackLog("lossless-cache-ready", track);
+    playbackLog("lossless-cache-warming", track, { format: file.format });
   } catch (error) {
     playbackLog("lossless-cache-failed", track, { error });
   }
@@ -429,16 +511,17 @@ const lucidaSearches = new Map<
   string,
   { expires: number; promise: Promise<LucidaSearch> }
 >();
-function cachedLucidaSearch(query: string, service: string) {
+function cachedLucidaSearch(query: string, service: string, fast = false) {
   const key = JSON.stringify([
     query.normalize("NFKC").toLowerCase().trim(),
     service,
+    fast,
   ]);
   const cached = lucidaSearches.get(key);
   if (cached && Date.now() < cached.expires) return cached.promise;
   const entry = {
     expires: Date.now() + 180000,
-    promise: invoke<LucidaSearch>("lucida_search", { query, service }),
+    promise: invoke<LucidaSearch>("lucida_search", { query, service, fast }),
   };
   lucidaSearches.set(key, entry);
   if (lucidaSearches.size > 64)
@@ -471,13 +554,14 @@ export async function searchLucida(
 async function queryLucida(
   query: string,
   service: "amazon" | "all" | "others",
+  fast = false,
 ): Promise<Track[]> {
   if (!("__TAURI_INTERNALS__" in window)) return [];
-  const result = await cachedLucidaSearch(query, service);
+  const result = await cachedLucidaSearch(query, service, fast);
   if (!Array.isArray(result.tracks))
     throw new Error("Invalid Lucida search response");
   lucidaCoverage = result.catalogs || [];
-  if (service === "amazon" && !result.tracks.length)
+  if (!fast && service === "amazon" && !result.tracks.length)
     return searchLucida(query, "others");
   return result.tracks.flatMap((item) => {
     let url: URL;
@@ -551,6 +635,29 @@ async function queryLucida(
   });
 }
 
+function firstMatchingSources(wanted: Track, requests: Promise<Track[]>[]) {
+  return new Promise<Track[]>((resolve) => {
+    if (!requests.length) return resolve([]);
+    const found: Track[] = [];
+    let remaining = requests.length;
+    for (const request of requests)
+      void request
+        .then(
+          (tracks) => {
+            found.push(...tracks);
+            const matching = tracks.filter((candidate) =>
+              sameRecording(wanted, candidate),
+            );
+            if (matching.length) resolve(matching);
+          },
+          () => {},
+        )
+        .finally(() => {
+          if (--remaining === 0) resolve(found);
+        });
+  });
+}
+
 const lucidaUnavailableUntil = new Map<string, number>();
 export interface OfflineSource {
   path?: string;
@@ -577,6 +684,14 @@ export async function prepareOfflineSource(
     return { url: track.remoteUrl };
   }
   const resolved = await resolveStreaming(track, [], undefined, true);
+  if (resolved.playbackSource?.startsWith("https://www.youtube.com/watch?")) {
+    const file = await invoke<AudioFile>("extractor_cache_stream", {
+      url: resolved.streamCacheUrl || resolved.src,
+      recording: audioCacheIdentity(track),
+      duration: track.duration,
+    });
+    return { path: file.path };
+  }
   return {
     url: resolved.streamCacheUrl || resolved.src,
     hls: !!resolved.streamType,
@@ -604,8 +719,9 @@ async function resolveStreaming(
   const resolveCandidate = async (candidate: Track): Promise<Track> => {
     if (!candidate.extractorUrl)
       return { ...candidate, playbackSource: candidate.src };
-    const direct =
-      new URL(candidate.extractorUrl).hostname === "soundcloud.com";
+    const direct = ["soundcloud.com", "www.youtube.com"].includes(
+      new URL(candidate.extractorUrl).hostname,
+    );
     const host = new URL(candidate.extractorUrl).hostname;
     const started = performance.now();
     playbackLog("source-start", track, {
@@ -668,12 +784,21 @@ async function resolveStreaming(
       throw error;
     }
   };
+  let finished = false;
   return chooseStream(
-    track,
+    {
+      ...track,
+      alternatives: [...(track.alternatives || []), ...savedSources(track)],
+    },
     {
       resolve: resolveCandidate,
       metadataOnly,
-      prepared,
+      prepared: (resolved) => {
+        try {
+          rememberSource(track, resolved);
+        } catch {}
+        prepared?.(resolved);
+      },
       warmPrimary: metadataOnly
         ? undefined
         : (candidate) => {
@@ -681,62 +806,30 @@ async function resolveStreaming(
           },
       discoverPrimary: async (wanted) => {
         const started = performance.now();
-        try {
-          const found = await searchLucida(
-            `${wanted.artist} ${wanted.title}`,
-            sourcePriority(wanted) === 0 ? "others" : "amazon",
-          );
-          const unavailableHosts: Record<string, string[]> = {
-            deezer: ["www.deezer.com", "deezer.com"],
-            qobuz: ["open.qobuz.com", "play.qobuz.com", "www.qobuz.com"],
-            tidal: ["tidal.com", "listen.tidal.com"],
-            yandex: ["music.yandex.ru", "music.yandex.com"],
-          };
-          for (const catalog of lucidaCoverage) {
-            if (
-              catalog.error &&
-              /No servers available|status code 403/i.test(catalog.error)
-            )
-              for (const host of unavailableHosts[catalog.service] || [])
-                lucidaUnavailableUntil.set(host, Date.now() + 15000);
-          }
-          playbackLog("primary-search", wanted, {
-            elapsedMs: Math.round(performance.now() - started),
-            count: found.length,
-            matching: found.filter((candidate) =>
-              sameRecording(wanted, candidate),
-            ).length,
-            catalogs: lucidaCoverage,
-          });
-          if (
-            sourcePriority(wanted) !== 0 &&
-            !found.some((candidate) => sameRecording(wanted, candidate))
-          ) {
-            const others = await searchLucida(
-              `${wanted.artist} ${wanted.title}`,
-              "others",
-            );
-            playbackLog("secondary-search", wanted, {
-              count: others.length,
-              matching: others.filter((candidate) =>
-                sameRecording(wanted, candidate),
-              ).length,
-            });
-            return others;
-          }
-          return found;
-        } catch (error) {
-          playbackLog("primary-search-failed", wanted, {
-            elapsedMs: Math.round(performance.now() - started),
-            error,
-          });
-          throw error;
-        }
+        const artist = trackArtists(wanted)[0] || wanted.artist;
+        const query = `${artist} ${wanted.title}`;
+        const service = sourcePriority(wanted) === 0 ? "others" : "amazon";
+        const first = await queryLucida(query, service, true).catch(() => []);
+        const matching = first.filter((candidate) =>
+          sameRecording(wanted, candidate),
+        );
+        playbackLog("primary-search", wanted, {
+          elapsedMs: Math.round(performance.now() - started),
+          count: first.length,
+          matching: matching.length,
+          catalogs: lucidaCoverage,
+          fast: true,
+        });
+        if (matching.length) return matching;
+        const requests = [queryLucida(wanted.title, service, true)];
+        if (service === "amazon")
+          requests.push(queryLucida(query, "others", true));
+        return firstMatchingSources(wanted, requests);
       },
       discover: async (wanted) => {
         const queries = [
           ...new Set(
-            [wanted.artist, ...trackArtists(wanted)]
+            trackArtists(wanted)
               .slice(0, 2)
               .map((artist) => `${artist} ${wanted.title}`),
           ),
@@ -744,34 +837,27 @@ async function resolveStreaming(
         const jobs = [
           ...queries.map((query) => searchExtracted(query)),
           import("./search").then(({ searchAudius }) =>
-            searchAudius(`${wanted.artist} ${wanted.title}`),
+            searchAudius(
+              `${trackArtists(wanted)[0] || wanted.artist} ${wanted.title}`,
+            ),
           ),
         ];
-        return new Promise<Track[]>((resolve) => {
-          const found: Track[] = [];
-          let remaining = jobs.length;
-          for (const job of jobs)
-            void job
-              .then(
-                (tracks) => {
-                  found.push(...tracks);
-                  const matching = tracks.filter((candidate) =>
-                    sameRecording(wanted, candidate),
-                  );
-                  playbackLog("fallback-search", wanted, {
-                    count: tracks.length,
-                    matching: matching.length,
-                  });
-                  if (matching.length) resolve(matching);
-                },
-                () => {},
-              )
-              .finally(() => {
-                if (--remaining === 0) resolve(found);
-              });
-        });
+        jobs.push(
+          new Promise<Track[]>((resolve) => {
+            window.setTimeout(() => {
+              if (finished) return resolve([]);
+              void searchExtracted(
+                `${trackArtists(wanted)[0] || wanted.artist} ${wanted.title}`,
+                "youtube",
+              ).then(resolve, () => resolve([]));
+            }, 1200);
+          }),
+        );
+        return firstMatchingSources(wanted, jobs);
       },
     },
     excluded,
-  );
+  ).finally(() => {
+    finished = true;
+  });
 }

@@ -10,6 +10,7 @@ fn allowed(url: &reqwest::Url) -> bool {
         && url.host_str().is_some_and(|host| {
             [
                 "mzstatic.com",
+                "api.mambo.wtf",
                 "dzcdn.net",
                 "sndcdn.com",
                 "archive.org",
