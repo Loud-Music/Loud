@@ -1,6 +1,6 @@
 [package]
 name = "loud-platform"
-version = "0.2.11"
+version = "0.2.12"
 description = "Loud music player"
 authors = ["Loud Platform"]
 edition = "2021"
