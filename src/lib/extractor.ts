@@ -44,7 +44,12 @@ function extractedTracks(
         {
           id: `${youtube ? "youtube" : "soundcloud"}:${item.id}`,
           title: item.title,
-          artist: item.artist || item.uploader || "Неизвестный исполнитель",
+          artist:
+            item.artist ||
+            (youtube
+              ? item.uploader?.replace(/\s+-\s+Topic$/i, "").trim()
+              : item.uploader) ||
+            "Неизвестный исполнитель",
           album: item.album || item.title,
           duration: item.duration,
           source: youtube

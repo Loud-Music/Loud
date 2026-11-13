@@ -305,7 +305,7 @@ pub async fn extractor_search(
             "--dump-single-json",
         ]);
         if youtube {
-            cmd.arg(format!("ytsearch3:{}", query.trim()));
+            cmd.arg(format!("ytsearch5:{}", query.trim()));
         } else if query.starts_with("https://soundcloud.com/") {
             cmd.arg(track_url(&query)?);
         } else {
