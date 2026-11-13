@@ -1,6 +1,6 @@
 import RangeField from "./RangeField";
 import { Button } from "@animate-ui/react/primitives/buttons/button";
-import type { Dispatch, SetStateAction } from "react";
+import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import {
   Heart,
   Shuffle,
@@ -77,7 +77,6 @@ export default function Player({
   toggleFavorite,
   onSettings,
 }: Props) {
-  const progress = usePlaybackProgress();
   return (
     <footer
       className={`player ${playing ? "is-playing" : ""}`}
@@ -223,23 +222,46 @@ export default function Player({
           }}
         />
       </div>
-      <div className="seek-bar">
-        <span>{time(progress)}</span>
-        <RangeField
-          aria-label="Позиция воспроизведения"
-          min={0}
-          max={duration || 1}
-          value={Math.min(progress, duration || 1)}
-          step="0.1"
-          style={
-            {
-              "--range-progress": `${duration ? (progress / duration) * 100 : 0}%`,
-            } as React.CSSProperties
-          }
-          onValueChange={(value) => seek(Number(value))}
-        />
-        <span>{time(duration)}</span>
-      </div>
+      <SeekBar key={current.id} duration={duration} seek={seek} />
     </footer>
+  );
+}
+
+function SeekBar({ duration, seek }: Pick<Props, "duration" | "seek">) {
+  const progress = usePlaybackProgress();
+  const dragging = useRef(false);
+  const [preview, setPreview] = useState<number>();
+  const position = Math.min(preview ?? progress, duration || 0);
+  const finishDrag = () => {
+    dragging.current = false;
+    setPreview(undefined);
+  };
+  return (
+    <div
+      className="seek-bar"
+      onPointerCancel={finishDrag}
+      onLostPointerCapture={finishDrag}
+    >
+      <span>{time(position)}</span>
+      <RangeField
+        aria-label="Позиция воспроизведения"
+        aria-valuetext={time(position)}
+        disabled={!duration}
+        min={0}
+        max={duration || 1}
+        value={position}
+        step={0.1}
+        onPointerDown={() => {
+          dragging.current = true;
+          setPreview(progress);
+        }}
+        onPointerUp={finishDrag}
+        onValueChange={(value) => {
+          if (dragging.current) setPreview(value);
+        }}
+        onValueCommit={seek}
+      />
+      <span>{time(duration)}</span>
+    </div>
   );
 }

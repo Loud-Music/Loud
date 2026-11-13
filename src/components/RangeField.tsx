@@ -1,8 +1,11 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEventHandler } from "react";
 import { Slider } from "@animate-ui/react/primitives/radix-ui/slider";
 export default function RangeField({
   value,
   onValueChange,
+  onValueCommit,
+  onPointerDown,
+  onPointerUp,
   min = 0,
   max = 100,
   step = 1,
@@ -14,6 +17,9 @@ export default function RangeField({
 }: {
   value: number;
   onValueChange: (value: number) => void;
+  onValueCommit?: (value: number) => void;
+  onPointerDown?: PointerEventHandler<HTMLSpanElement>;
+  onPointerUp?: PointerEventHandler<HTMLSpanElement>;
   min?: number | string;
   max?: number | string;
   step?: number | string;
@@ -29,6 +35,9 @@ export default function RangeField({
       className="range-field"
       value={[value]}
       onValueChange={(values) => onValueChange(values[0])}
+      onValueCommit={(values) => onValueCommit?.(values[0])}
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
       min={Number(min)}
       max={Number(max)}
       step={Number(step)}

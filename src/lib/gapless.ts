@@ -78,6 +78,16 @@ export class GaplessSession {
     private failed: (error: unknown) => void,
   ) {}
 
+  private setTimelineEnd(end: number) {
+    if (
+      this.media.readyState === "open" &&
+      Number.isFinite(end) &&
+      end > 0 &&
+      this.media.duration !== end
+    )
+      this.media.duration = end;
+  }
+
   async start(track: Track, resource: GaplessResource) {
     this.blob = URL.createObjectURL(this.media);
     const open = new Promise<void>((resolve, reject) => {
@@ -121,6 +131,7 @@ export class GaplessSession {
       if (!this.buffer || this.closed) return;
       await idle(this.buffer);
       if (revision !== undefined && revision !== this.queueRevision) return;
+      this.setTimelineEnd(segment.offset + segment.duration);
       if (this.mime !== resource.mime) {
         this.buffer.changeType(resource.mime);
         this.mime = resource.mime;
@@ -148,13 +159,15 @@ export class GaplessSession {
       if (this.closed) return;
       const ranges = this.buffer.buffered;
       if (!ranges.length) throw new Error("Gapless stream contained no audio");
-      segment.duration = ranges.end(ranges.length - 1) - segment.offset;
-      segment.complete = true;
-      if (
-        !(segment.duration > 0) ||
-        Math.abs(segment.duration - segment.track.duration) > 3
-      )
+      const end = ranges.end(ranges.length - 1);
+      const duration = end - segment.offset;
+      if (!(duration > 0) || Math.abs(duration - segment.track.duration) > 3)
         throw new Error("Gapless source is a different recording");
+      if (this.audio.seeking && this.audio.currentTime >= end)
+        this.audio.currentTime = Math.max(segment.offset, end - 0.05);
+      this.setTimelineEnd(end);
+      segment.duration = duration;
+      segment.complete = true;
     } finally {
       this.requests.delete(controller);
       this.resources.delete(resource.url);
@@ -240,6 +253,7 @@ export class GaplessSession {
           await idle(this.buffer);
         }
         this.segments.splice(this.segments.indexOf(active) + 1);
+        this.setTimelineEnd(end);
       });
   }
 

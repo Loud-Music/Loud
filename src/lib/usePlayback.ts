@@ -109,10 +109,52 @@ export default function usePlayback(
   );
   const eqGraph = useRef<EqualizerGraph | undefined>(undefined);
   const gaplessSession = useRef<GaplessSession | undefined>(undefined);
+  const pendingSeek = useRef<number | null>(null);
+  const mediaReady = useRef(false);
   const gaplessFailed = useRef(new Set<string>());
   const adoptedGapless = useRef("");
   const activeTrack = useRef(track);
   activeTrack.current = track;
+  const trackPosition = () =>
+    Math.max(
+      0,
+      (audio.current?.currentTime || 0) -
+        (gaplessSession.current?.active()?.offset || 0),
+    );
+  const applyPendingSeek = useCallback(() => {
+    const element = audio.current;
+    const position = pendingSeek.current;
+    if (
+      !element ||
+      position === null ||
+      !mediaReady.current ||
+      element.readyState < 1
+    )
+      return;
+    const session = gaplessSession.current;
+    const segment = session?.segments.find(
+      (item) => item.track.id === activeTrack.current.id,
+    );
+    if (session && !segment) return;
+    const target = segment
+      ? segment.offset +
+        Math.min(position, Math.max(0, segment.duration - 0.001))
+      : position;
+    if (Number.isNaN(element.duration) || element.duration <= 0) return;
+    if (!Number.isFinite(element.duration)) {
+      const ranges = element.seekable;
+      let available = false;
+      for (let i = 0; i < ranges.length; i++) {
+        if (ranges.start(i) <= target && target <= ranges.end(i)) {
+          available = true;
+          break;
+        }
+      }
+      if (!available) return;
+    }
+    element.currentTime = Math.min(target, element.duration);
+    pendingSeek.current = null;
+  }, []);
   const [gapless, setGaplessState] = useState(() =>
     readSetting("gapless:v1", true),
   );
@@ -149,11 +191,7 @@ export default function usePlayback(
       rejectedSources.current = { id: song.id, urls: excluded };
       replacement.current = {
         id: song.id,
-        position: Math.max(
-          0,
-          (audio.current?.currentTime || 0) -
-            (gaplessSession.current?.active()?.offset || 0),
-        ),
+        position: trackPosition(),
         track: alternative,
         controller,
       };
@@ -267,10 +305,8 @@ export default function usePlayback(
         if (gaplessSession.current !== session) return;
         const segment = session.active();
         const selected = segment?.track || song;
-        const position = Math.max(
-          0,
-          element.currentTime - (segment?.offset || 0),
-        );
+        pendingSeek.current ??= trackPosition();
+        mediaReady.current = false;
         gaplessFailed.current.add(selected.id);
         session.close();
         gaplessSession.current = undefined;
@@ -278,10 +314,13 @@ export default function usePlayback(
         element.addEventListener(
           "loadedmetadata",
           () => {
-            element.currentTime = Math.min(
-              position,
-              Math.max(0, element.duration - 0.05),
-            );
+            if (
+              token !== generation.current ||
+              activeTrack.current.id !== selected.id
+            )
+              return;
+            mediaReady.current = true;
+            applyPendingSeek();
             if (desiredPlaying.current) void element.play().catch(() => {});
           },
           { once: true },
@@ -292,12 +331,25 @@ export default function usePlayback(
       gaplessSession.current?.close();
       gaplessSession.current = session;
       setTimelineOffset(0);
-      element.addEventListener("loadedmetadata", ready, { once: true });
+      element.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (
+            gaplessSession.current !== session ||
+            token !== generation.current
+          )
+            return;
+          mediaReady.current = true;
+          applyPendingSeek();
+          ready();
+        },
+        { once: true },
+      );
       await session.start(song, resource);
       if (token === generation.current) setGaplessEpoch((value) => value + 1);
       return true;
     },
-    [gapless, exclusive],
+    [gapless, exclusive, applyPendingSeek],
   );
 
   useEffect(() => {
@@ -402,13 +454,22 @@ export default function usePlayback(
         const prepared = await prepareExclusive(song);
         if (token !== generation.current) return;
         await invoke("audio_cache_pin", { key: prepared });
+        if (token !== generation.current) return;
+        const start = pendingSeek.current ?? 0;
         const session = await invoke<number>("exclusive_play", {
           key: prepared,
-          start: 0,
+          start,
         });
         if (token !== generation.current) return;
         nativeSession.current = session;
         key.current = prepared;
+        const latest = pendingSeek.current;
+        pendingSeek.current = null;
+        if (latest !== null && latest !== start)
+          await invoke("exclusive_control", {
+            action: "seek",
+            position: latest,
+          });
         if (token === generation.current) setPlaying(true);
       } catch (error) {
         if (isCurrent(token, song)) {
@@ -434,6 +495,7 @@ export default function usePlayback(
     if (!el) return;
     claimAudio(track);
     if (rejectedSources.current.id !== track.id) {
+      pendingSeek.current = null;
       rejectedSources.current = { id: track.id, urls: [] };
       replacement.current = undefined;
       recordingSource.current = "";
@@ -456,6 +518,7 @@ export default function usePlayback(
     }
     gaplessSession.current?.close();
     gaplessSession.current = undefined;
+    mediaReady.current = false;
     setTimelineOffset(0);
     const token = ++generation.current;
     recover.current = undefined;
@@ -504,7 +567,7 @@ export default function usePlayback(
       const nextRecording =
         replacement.current?.id === track.id ? replacement.current : undefined;
       replacement.current = undefined;
-      let resumePosition = nextRecording?.position ?? 0;
+      if (nextRecording) pendingSeek.current ??= nextRecording.position;
       const load = async (): Promise<Track> => {
         if (switching) throw new Error("Stream is already switching");
         const request = ++sourceAttempt;
@@ -512,6 +575,12 @@ export default function usePlayback(
           isCurrent(token, track) && request === sourceAttempt;
         removeReady();
         switching = true;
+        if (request > 1 && gaplessSession.current) {
+          gaplessSession.current.close();
+          gaplessSession.current = undefined;
+          setTimelineOffset(0);
+        }
+        mediaReady.current = false;
         setPreparing(true);
         clearTimeout(stallTimer.current);
         try {
@@ -565,11 +634,8 @@ export default function usePlayback(
               recover.current?.();
               return;
             }
-            if (resumePosition > 0)
-              el.currentTime = Math.min(
-                resumePosition,
-                resolved.duration - 0.1,
-              );
+            mediaReady.current = true;
+            applyPendingSeek();
             if (desiredPlaying.current)
               void el
                 .play()
@@ -586,7 +652,10 @@ export default function usePlayback(
             stallTimer.current = setTimeout(() => {
               if (current()) recover.current?.();
             }, 8000);
-          if (!resumePosition && (await startGapless(resolved, token, ready)))
+          if (
+            !pendingSeek.current &&
+            (await startGapless(resolved, token, ready))
+          )
             return resolved;
           const HlsPlayer =
             resolved.streamType === "hls"
@@ -603,7 +672,11 @@ export default function usePlayback(
             hls.current = player;
             player.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
               ready();
-              if (!desiredPlaying.current) player.stopLoad();
+              if (!desiredPlaying.current) {
+                if (pendingSeek.current !== null)
+                  player.startLoad(pendingSeek.current);
+                else player.stopLoad();
+              }
             });
             player.on(HlsPlayer.Events.ERROR, (_, error) => {
               if (error.fatal && current() && hls.current === player)
@@ -644,6 +717,10 @@ export default function usePlayback(
         }
         recover.current = undefined;
         clearTimeout(stallTimer.current);
+        if (pendingSeek.current !== null) {
+          pendingSeek.current = null;
+          setPlaybackProgress(trackPosition());
+        }
         setPreparing(false);
         setBuffering(false);
         setPlaying(false);
@@ -659,10 +736,7 @@ export default function usePlayback(
           return;
         }
         if (selected && !failed.includes(selected)) failed.push(selected);
-        resumePosition = Math.max(
-          resumePosition,
-          Number.isFinite(el.currentTime) ? el.currentTime : 0,
-        );
+        pendingSeek.current ??= trackPosition();
         hls.current?.destroy();
         hls.current = undefined;
         el.pause();
@@ -678,10 +752,7 @@ export default function usePlayback(
       };
       resumeNetwork.current = () => {
         if (token !== generation.current || switching) return;
-        resumePosition = Math.max(
-          resumePosition,
-          Number.isFinite(el.currentTime) ? el.currentTime : 0,
-        );
+        pendingSeek.current ??= trackPosition();
         const retry = load();
         loadingAudio.current = retry;
         void retry.catch(fail);
@@ -707,12 +778,12 @@ export default function usePlayback(
         void invoke("exclusive_control", { action: "stop" }).catch(() => {});
       resumeNetwork.current = () => {
         if (token !== generation.current) return;
-        const position = Number.isFinite(el.currentTime) ? el.currentTime : 0;
+        pendingSeek.current ??= trackPosition();
         el.addEventListener(
           "loadedmetadata",
           () => {
             if (token !== generation.current) return;
-            el.currentTime = Math.min(position, Math.max(0, el.duration - 0.1));
+            applyPendingSeek();
             if (desiredPlaying.current)
               void el.play().catch(() => recover.current?.());
           },
@@ -728,6 +799,7 @@ export default function usePlayback(
         )
           return;
         if (token !== generation.current) return;
+        mediaReady.current = true;
         el.src = track.src || "";
         el.load();
         if (desiredPlaying.current && track.src) await el.play();
@@ -745,7 +817,14 @@ export default function usePlayback(
         );
       });
     }
-  }, [track.id, track.src, exclusive, isCurrent, recordingRevision]);
+  }, [
+    track.id,
+    track.src,
+    exclusive,
+    isCurrent,
+    recordingRevision,
+    applyPendingSeek,
+  ]);
   useEffect(() => {
     if (!exclusive) return;
     let active = true,
@@ -886,20 +965,23 @@ export default function usePlayback(
   }, [exclusive, preparing]);
   const seek = useCallback(
     (position: number) => {
-      if (!Number.isFinite(position)) return;
+      if (!activeTrack.current.id || !Number.isFinite(position)) return;
+      position = Math.max(0, position);
       if (exclusive) {
-        if (!key.current) return;
-        void invoke("exclusive_control", { action: "seek", position }).catch(
-          (error) => notify(String(error)),
-        );
+        if (!key.current) pendingSeek.current = position;
+        else
+          void invoke("exclusive_control", { action: "seek", position }).catch(
+            (error) => notify(String(error)),
+          );
       } else {
-        if (!audio.current || !Number.isFinite(audio.current.duration)) return;
-        audio.current.currentTime =
-          position + (gaplessSession.current?.active()?.offset || 0);
+        pendingSeek.current = position;
+        if (hls.current && !hls.current.loadingEnabled)
+          hls.current.startLoad(position);
+        applyPendingSeek();
       }
       setPlaybackProgress(position);
     },
-    [exclusive, notify],
+    [exclusive, notify, applyPendingSeek],
   );
   const togglePlay = useCallback(() => {
     const token = generation.current;
@@ -939,8 +1021,11 @@ export default function usePlayback(
     onWaiting: () => {
       if (!exclusive && !audio.current?.paused) {
         setBuffering(true);
-        if (recover.current) {
-          clearTimeout(stallTimer.current);
+        clearTimeout(stallTimer.current);
+        if (
+          recover.current &&
+          !(audio.current?.seeking && gaplessSession.current)
+        ) {
           stallTimer.current = setTimeout(() => recover.current?.(), 8000);
         }
       }
@@ -970,19 +1055,24 @@ export default function usePlayback(
       }
     },
     onCanPlay: () => {
+      applyPendingSeek();
       if (!exclusive) setBuffering(false);
     },
+    onDurationChange: applyPendingSeek,
+    onProgress: applyPendingSeek,
     onLoadedMetadata: () => {
       if (gaplessSession.current) return;
       if (
         needsAudioResolution(track) &&
         audio.current &&
+        Number.isFinite(audio.current.duration) &&
         ((audio.current.duration <= 30 && !track.fullRecording) ||
           Math.abs(audio.current.duration - track.duration) > 3)
       ) {
         recover.current?.();
         return;
       }
+      applyPendingSeek();
       if (
         !exclusive &&
         audio.current &&
@@ -991,7 +1081,7 @@ export default function usePlayback(
         setDuration(audio.current.duration);
     },
     onTimeUpdate: () => {
-      if (!exclusive) {
+      if (!exclusive && pendingSeek.current === null) {
         const segment = gaplessSession.current?.active();
         setPlaybackProgress(
           Math.max(
