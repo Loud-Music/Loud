@@ -6,17 +6,58 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     net::{TcpListener, TcpStream},
     path::PathBuf,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+    },
     time::{Duration, Instant, SystemTime},
 };
 
 struct Entry {
+    remote: String,
+    cancelled: AtomicBool,
     partial: PathBuf,
     created: Instant,
     result: Mutex<Option<Result<Value, String>>>,
 }
 type Streams = Arc<Mutex<HashMap<String, Arc<Entry>>>>;
 static SERVER: OnceLock<Result<(u16, Streams), String>> = OnceLock::new();
+
+pub fn cancelled_download(remote: &str) -> bool {
+    let Some(Ok((_, streams))) = SERVER.get() else {
+        return false;
+    };
+    let Ok(entries) = streams.lock() else {
+        return false;
+    };
+    let mut found = false;
+    for entry in entries.values().filter(|entry| entry.remote == remote) {
+        found = true;
+        if !entry.cancelled.load(Ordering::Relaxed) {
+            return false;
+        }
+    }
+    found
+}
+
+#[tauri::command]
+pub fn stream_discard(url: String) -> Result<(), String> {
+    if !owns_url(&url) {
+        return Ok(());
+    }
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "Invalid prepared stream")?;
+    let Some(Ok((_, streams))) = SERVER.get() else {
+        return Ok(());
+    };
+    if let Some(entry) = streams
+        .lock()
+        .map_err(|_| "Stream state unavailable")?
+        .get(parsed.path().trim_start_matches('/'))
+    {
+        entry.cancelled.store(true, Ordering::Relaxed);
+    }
+    Ok(())
+}
 
 pub fn owns_url(raw: &str) -> bool {
     let Some(Ok((port, streams))) = SERVER.get() else {
@@ -63,13 +104,19 @@ pub fn register(
     );
     let audio_key = format!("{:x}", Sha256::digest(url.as_bytes()));
     let entry = Arc::new(Entry {
+        remote: url.clone(),
+        cancelled: AtomicBool::new(false),
         partial: crate::network::cache_root(&app)?.join(format!("{audio_key}.part")),
         created: Instant::now(),
         result: Mutex::new(None),
     });
     {
         let mut entries = streams.lock().map_err(|e| e.to_string())?;
-        entries.retain(|_, entry| entry.created.elapsed() < Duration::from_secs(900));
+        entries.retain(|_, entry| {
+            entry.created.elapsed() < Duration::from_secs(900)
+                && !(entry.cancelled.load(Ordering::Relaxed)
+                    && entry.result.lock().is_ok_and(|state| state.is_some()))
+        });
         if entries.len() >= 128 {
             return Err("Too many prepared streams".into());
         }
@@ -82,6 +129,7 @@ pub fn register(
             url.clone(),
             recording.unwrap_or(url),
             duration,
+            Some(true),
         ));
         let event = match &result {
             Ok(data) => {
@@ -107,6 +155,8 @@ pub fn register(
                     "AAC"
                 } else if head.starts_with(b"ID3") || head[0] == 0xff {
                     "MP3"
+                } else if head.starts_with(b"OggS") {
+                    "OGG"
                 } else {
                     "Audio"
                 };
@@ -114,6 +164,7 @@ pub fn register(
             }
         }
         if Instant::now() >= deadline {
+            entry.cancelled.store(true, Ordering::Relaxed);
             return Err("Stream did not deliver audio in time".into());
         }
         std::thread::sleep(Duration::from_millis(15));
@@ -121,6 +172,9 @@ pub fn register(
 }
 
 fn available_path(entry: &Entry) -> Result<PathBuf, String> {
+    if entry.cancelled.load(Ordering::Relaxed) {
+        return Err("Stream preparation cancelled".into());
+    }
     match entry.result.lock().map_err(|e| e.to_string())?.as_ref() {
         Some(Ok(data)) => Ok(PathBuf::from(
             data["path"].as_str().ok_or("Missing cached stream")?,
@@ -211,6 +265,8 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
         "audio/flac"
     } else if &head[4..8] == b"ftyp" {
         "audio/mp4"
+    } else if head.starts_with(b"OggS") {
+        "audio/ogg"
     } else {
         "audio/mpeg"
     };
@@ -239,6 +295,9 @@ fn serve(mut socket: TcpStream, streams: Streams) -> Result<(), Box<dyn std::err
     loop {
         if remaining == Some(0) {
             break;
+        }
+        if entry.cancelled.load(Ordering::Relaxed) {
+            return Ok(());
         }
         let limit = remaining
             .unwrap_or(buffer.len() as u64)

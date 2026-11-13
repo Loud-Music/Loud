@@ -467,6 +467,7 @@ pub async fn extractor_cache_stream(
     url: String,
     recording: String,
     duration: f64,
+    cancellable: Option<bool>,
 ) -> Result<Value, String> {
     let parsed = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
     let parts: Vec<_> = parsed.path_segments().ok_or("Invalid stream")?.collect();
@@ -487,9 +488,9 @@ pub async fn extractor_cache_stream(
         && parts[3]
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_');
-    if parsed.scheme() != "https"
-        || !(audius || lucida || youtube)
-        || parsed.port().is_some()
+    let additional = crate::sources::stream_url_allowed(&parsed);
+    if (!additional && (parsed.scheme() != "https" || parsed.port().is_some()))
+        || !(audius || lucida || youtube || additional)
         || !parsed.username().is_empty()
         || parsed.password().is_some()
         || !duration.is_finite()
@@ -513,20 +514,24 @@ pub async fn extractor_cache_stream(
             allow_audio(&app, &data)?;
             return Ok(data);
         }
+        let initial = parsed.clone();
+        if cancellable.unwrap_or(false) && crate::stream_proxy::cancelled_download(&url) {
+            return Err("Stream preparation cancelled".into());
+        }
         let client = reqwest::blocking::Client::builder()
             .user_agent("Mozilla/5.0")
             .connect_timeout(std::time::Duration::from_secs(5))
             .timeout(std::time::Duration::from_secs(180))
-            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            .redirect(reqwest::redirect::Policy::custom(move |attempt| {
                 if attempt.previous().len() < 5
-                    && attempt.url().scheme() == "https"
+                    && ((attempt.url().scheme() == "https"
                     && attempt.url().host_str().is_some_and(|host| {
                         host == "api.audius.co"
                             || host.ends_with(".audius.co")
                             || host.ends_with(".googlevideo.com")
                             || host.ends_with(".r2.cloudflarestorage.com")
                             || host.ends_with(".lucida.to")
-                    })
+                    })) || crate::sources::redirect_allowed(&initial, attempt.url()))
                 {
                     attempt.follow()
                 } else {
@@ -564,11 +569,18 @@ pub async fn extractor_cache_stream(
             let mut file = fs::File::create(&temp).map_err(|e| e.to_string())?;
             let mut size = 0;
             loop {
-                let copied = std::io::copy(
-                    &mut response.by_ref().take(chunk.unwrap_or(limit) + 1),
-                    &mut file,
-                )
-                .map_err(|e| e.to_string())?;
+                let mut input = response.by_ref().take(chunk.unwrap_or(limit) + 1);
+                let mut buffer = [0u8; 65536];
+                let mut copied = 0u64;
+                loop {
+                    if cancellable.unwrap_or(false) && crate::stream_proxy::cancelled_download(&url) {
+                        return Err("Stream preparation cancelled".into());
+                    }
+                    let read = input.read(&mut buffer).map_err(|e| e.to_string())?;
+                    if read == 0 { break; }
+                    file.write_all(&buffer[..read]).map_err(|e| e.to_string())?;
+                    copied += read as u64;
+                }
                 if chunk.is_some_and(|expected| copied != expected) {
                     return Err("Audio chunk was interrupted".into());
                 }
@@ -591,6 +603,7 @@ pub async fn extractor_cache_stream(
                 Some("MP3") => "mp3",
                 Some("AAC") => "m4a",
                 Some("FLAC") => "flac",
+                Some("OPUS" | "OGG") => "ogg",
                 _ => return Err("Unsupported cached codec".into()),
             };
             let path = root.join(format!("{key}.{extension}"));

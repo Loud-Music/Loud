@@ -4,6 +4,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { chooseStream, sameRecording } from "./streamResolver";
 import { readSetting, saveSetting, trackArtists, type Track } from "./library";
 import { catalogJSON } from "./catalogRequest";
+import { playbackSources, searchJioSaavn } from "./playbackSources";
 
 interface ExtractedTrack {
   id: string;
@@ -98,6 +99,7 @@ const audioCacheIdentity = (track: Track) =>
 interface SourceHint {
   url: string;
   duration: number;
+  cacheKey?: string;
   quality?: "lossless" | "lossy";
   at: number;
 }
@@ -130,6 +132,8 @@ function rememberSource(track: Track, resolved: Track) {
       "www.deezer.com",
       "music.yandex.ru",
       "music.yandex.com",
+      "www.jiosaavn.com",
+      "jiosaavn.com",
     ].includes(host)
   )
     return;
@@ -141,6 +145,7 @@ function rememberSource(track: Track, resolved: Track) {
   const hint: SourceHint = {
     url,
     duration: resolved.duration,
+    cacheKey: resolved.nativeKey || resolved.streamCacheKey,
     quality: resolved.format === "FLAC" ? "lossless" : "lossy",
     at: Date.now(),
   };
@@ -159,35 +164,6 @@ function rememberSource(track: Track, resolved: Track) {
 }
 
 const streamCaching = new Set<string>();
-const upgrading = new Map<string, number>();
-async function warmLossless(track: Track) {
-  const key = audioCacheIdentity(track);
-  if (Date.now() < (upgrading.get(key) || 0)) return;
-  upgrading.set(key, Date.now() + 300000);
-  try {
-    const candidates = await queryLucida(
-      `${trackArtists(track)[0] || track.artist} ${track.title}`,
-      "amazon",
-      true,
-    );
-    const candidate =
-      candidates
-        .filter(
-          (item) => sameRecording(track, item) && sourcePriority(item) < 2,
-        )
-        .sort((a, b) => sourcePriority(a) - sourcePriority(b))[0] ||
-      (sourcePriority(track) < 2 ? track : undefined);
-    if (!candidate?.extractorUrl) return;
-    const file = await invoke<AudioFile>("extractor_stream", {
-      url: candidate.extractorUrl,
-      duration: track.duration,
-      recording: key,
-    });
-    playbackLog("lossless-cache-warming", track, { format: file.format });
-  } catch (error) {
-    playbackLog("lossless-cache-failed", track, { error });
-  }
-}
 export function cachePlayingStream(track: Track, resolved: Track) {
   if (
     !("__TAURI_INTERNALS__" in window) ||
@@ -227,6 +203,9 @@ export function cachePlayingStream(track: Track, resolved: Track) {
     .finally(() => streamCaching.delete(key));
 }
 interface StreamJob {
+  controller: AbortController;
+  foreground: boolean;
+  recording: string;
   expires: number;
   promise: Promise<Track>;
   listeners: Set<(track: Track) => void>;
@@ -234,15 +213,62 @@ interface StreamJob {
 }
 const streamJobs = new Map<string, StreamJob>();
 const warmedAudio = new Map<string, number>();
+let queueWanted = new Set<string>();
+let intentTrack: Track | undefined;
+let activeRecording = "";
+function discardJob(key: string, job: StreamJob) {
+  if (job.foreground || job.recording === activeRecording) return;
+  job.controller.abort();
+  if (streamJobs.get(key) === job) streamJobs.delete(key);
+  warmedAudio.delete(job.recording);
+}
+function discardUnused() {
+  for (const [key, job] of streamJobs)
+    if (
+      !queueWanted.has(job.recording) &&
+      (!intentTrack || job.recording !== audioCacheIdentity(intentTrack))
+    )
+      discardJob(key, job);
+}
+export function claimAudio(track: Track) {
+  activeRecording = audioCacheIdentity(track);
+  for (const job of streamJobs.values())
+    job.foreground = job.recording === activeRecording;
+  discardUnused();
+}
+export function releaseAudio(track: Track) {
+  const recording = audioCacheIdentity(track);
+  if (activeRecording === recording) activeRecording = "";
+  for (const job of streamJobs.values())
+    if (job.recording === recording) job.foreground = false;
+  discardUnused();
+}
+window.addEventListener("loud-playback-sources-changed", () => {
+  for (const [key, job] of streamJobs) discardJob(key, job);
+  streamJobs.clear();
+  warmedAudio.clear();
+});
 let prefetchRunning = 0;
 const queuedPrefetch = new Map<string, Track>();
 let intentTimer: ReturnType<typeof setTimeout>;
 export function prepareAudio(track: Track) {
-  clearTimeout(intentTimer);
-  intentTimer = setTimeout(() => prefetchAudio(track), 60);
+  cancelAudioPreparation();
+  intentTrack = track;
+  intentTimer = setTimeout(() => prefetchAudio(track), 180);
+}
+export function prepareQueue(tracks: Track[]) {
+  queueWanted = new Set(tracks.slice(0, 2).map(audioCacheIdentity));
+  for (const key of queuedPrefetch.keys())
+    if (!queueWanted.has(key)) queuedPrefetch.delete(key);
+  discardUnused();
+  for (const track of tracks.slice(0, 2)) prefetchAudio(track);
 }
 export function cancelAudioPreparation() {
   clearTimeout(intentTimer);
+  if (intentTrack && !queueWanted.has(audioCacheIdentity(intentTrack)))
+    queuedPrefetch.delete(audioCacheIdentity(intentTrack));
+  intentTrack = undefined;
+  discardUnused();
 }
 export function needsAudioResolution(track: Track) {
   if (track.downloaded) return false;
@@ -274,7 +300,7 @@ export function prefetchAudio(track: Track) {
   warmedAudio.set(key, Date.now() + 180000);
   if (warmedAudio.size > 256)
     warmedAudio.delete(warmedAudio.keys().next().value!);
-  void resolveExtracted(track, true)
+  void resolveExtracted(track, true, [], undefined, true)
     .then((resolved) => cachePlayingStream(track, resolved))
     .catch((error) => {
       warmedAudio.delete(key);
@@ -294,6 +320,7 @@ export async function resolveExtracted(
   streaming = false,
   excluded: readonly string[] = [],
   prepared?: (track: Track) => void,
+  background = false,
 ): Promise<Track> {
   if (!needsAudioResolution(track)) return track;
   if (!("__TAURI_INTERNALS__" in window))
@@ -303,6 +330,7 @@ export async function resolveExtracted(
   const warmed =
     streaming && !excluded.length ? streamJobs.get(warmKey) : undefined;
   if (warmed && Date.now() < warmed.expires) {
+    if (!background) warmed.foreground = true;
     if (prepared) {
       warmed.listeners.add(prepared);
       if (warmed.prepared) prepared(warmed.prepared);
@@ -331,13 +359,15 @@ export async function resolveExtracted(
       format: cached.format,
       size: cached.size,
     });
-    if (cached.format !== "FLAC") void warmLossless(track);
     return {
       ...track,
       src: convertFileSrc(cached.path),
       format: cached.format,
       duration: cached.duration,
       nativeKey: cached.key,
+      playbackSource: savedSources(track).find(
+        (hint) => hint.cacheKey === cached.key,
+      )?.url,
       sampleRate: cached.sampleRate,
       bitDepth: cached.bitDepth,
       streamType: undefined,
@@ -347,9 +377,14 @@ export async function resolveExtracted(
     const started = performance.now();
     try {
       const key = `${audioCacheIdentity(track)}:${Math.round(track.duration)}`;
-      if (excluded.length) streamJobs.delete(key);
+      if (excluded.length) {
+        streamJobs.get(key)?.controller.abort();
+        streamJobs.delete(key);
+        warmedAudio.delete(audioCacheIdentity(track));
+      }
       const existing = !excluded.length ? streamJobs.get(key) : undefined;
       if (existing && Date.now() < existing.expires) {
+        if (!background) existing.foreground = true;
         if (prepared) {
           existing.listeners.add(prepared);
           if (existing.prepared) prepared(existing.prepared);
@@ -364,30 +399,39 @@ export async function resolveExtracted(
       }
       const listeners = new Set<(track: Track) => void>();
       if (prepared) listeners.add(prepared);
+      const controller = new AbortController();
       const job: StreamJob = {
+        controller,
+        foreground: !background,
+        recording: audioCacheIdentity(track),
         expires: Date.now() + 180000,
         listeners,
-        promise: resolveStreaming(track, excluded, (candidate) => {
-          job.prepared = candidate;
-          for (const listener of listeners) listener(candidate);
-        }),
+        promise: resolveStreaming(
+          track,
+          excluded,
+          (candidate) => {
+            job.prepared = candidate;
+            for (const listener of listeners) listener(candidate);
+          },
+          false,
+          controller.signal,
+        ),
       };
       const promise = job.promise;
-      if (!excluded.length) {
-        if (streamJobs.size >= 32)
-          streamJobs.delete(streamJobs.keys().next().value!);
-        streamJobs.set(key, job);
-        void promise.then(
-          (value) => {
-            if (value.nativeKey && streamJobs.get(key)?.promise === promise)
-              streamJobs.delete(key);
-          },
-          () => {
-            if (streamJobs.get(key)?.promise === promise)
-              streamJobs.delete(key);
-          },
-        );
+      if (streamJobs.size >= 32) {
+        const oldest = [...streamJobs].find(([, item]) => !item.foreground);
+        if (oldest) discardJob(...oldest);
       }
+      streamJobs.set(key, job);
+      void promise.then(
+        (value) => {
+          if (value.nativeKey && streamJobs.get(key)?.promise === promise)
+            streamJobs.delete(key);
+        },
+        () => {
+          if (streamJobs.get(key)?.promise === promise) streamJobs.delete(key);
+        },
+      );
       const resolved = await promise.finally(() => listeners.clear());
       playbackLog("resolve-ready", track, {
         elapsedMs: Math.round(performance.now() - started),
@@ -659,6 +703,13 @@ function firstMatchingSources(wanted: Track, requests: Promise<Track[]>[]) {
 }
 
 const lucidaUnavailableUntil = new Map<string, number>();
+export function resolveAlternativeRecording(
+  track: Track,
+  excluded: readonly string[],
+  signal: AbortSignal,
+) {
+  return resolveStreaming(track, excluded, undefined, false, signal);
+}
 export interface OfflineSource {
   path?: string;
   url?: string;
@@ -703,7 +754,28 @@ async function resolveStreaming(
   excluded: readonly string[],
   prepared?: (track: Track) => void,
   metadataOnly = false,
+  signal?: AbortSignal,
 ): Promise<Track> {
+  const files = new Set<string>();
+  let winningUrl: string | undefined;
+  let finished = false;
+  const discard = (url: string) => {
+    if (url.startsWith("http://127.0.0.1:"))
+      void invoke("stream_discard", { url }).catch(() => {});
+  };
+  const abort = () => {
+    for (const url of files) discard(url);
+  };
+  signal?.addEventListener("abort", abort, { once: true });
+  const nativeFile = (command: string, args: Record<string, unknown>) =>
+    invoke<AudioFile>(command, args).then((file) => {
+      if (signal?.aborted || (finished && file.url !== winningUrl)) {
+        if (file.url) discard(file.url);
+        throw new DOMException("Подготовка отменена", "AbortError");
+      }
+      if (file.url) files.add(file.url);
+      return file;
+    });
   if ((track.artists?.length || 0) < 2 && /^deezer:\d+$/.test(track.id)) {
     track = { ...track };
     void catalogJSON<{ contributors?: { name: string }[] }>(
@@ -717,12 +789,17 @@ async function resolveStreaming(
       .catch(() => {});
   }
   const resolveCandidate = async (candidate: Track): Promise<Track> => {
+    if (signal?.aborted || finished)
+      throw new DOMException("Подготовка отменена", "AbortError");
     if (!candidate.extractorUrl)
       return { ...candidate, playbackSource: candidate.src };
     const direct = ["soundcloud.com", "www.youtube.com"].includes(
       new URL(candidate.extractorUrl).hostname,
     );
     const host = new URL(candidate.extractorUrl).hostname;
+    const saavn = host === "www.jiosaavn.com" || host === "jiosaavn.com";
+    if (saavn && !playbackSources().jiosaavn)
+      throw new Error("JioSaavn отключён в настройках.");
     const started = performance.now();
     playbackLog("source-start", track, {
       host,
@@ -735,13 +812,29 @@ async function resolveStreaming(
     let timer: ReturnType<typeof setTimeout>;
     try {
       const file = await Promise.race([
-        invoke<AudioFile>("extractor_stream", {
-          url: candidate.extractorUrl,
-          duration: candidate.duration,
-          recording: audioCacheIdentity(track),
-          ...(direct ? { directOnly: true } : {}),
-          ...(metadataOnly ? { prepareOnly: true } : {}),
-        }),
+        (() => {
+          const args = {
+            url: candidate.extractorUrl,
+            duration: candidate.duration,
+            recording: audioCacheIdentity(track),
+            ...(direct ? { directOnly: true } : {}),
+            ...(metadataOnly ? { prepareOnly: true } : {}),
+          };
+          const primary = nativeFile(
+            saavn ? "jiosaavn_stream" : "extractor_stream",
+            args,
+          );
+          const cobalt = playbackSources().cobalt;
+          if (!direct || !cobalt.endpoint) return primary;
+          return Promise.any([
+            primary,
+            nativeFile("cobalt_stream", {
+              ...args,
+              endpoint: cobalt.endpoint,
+              apiKey: cobalt.apiKey,
+            }),
+          ]);
+        })(),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error("Stream source timed out")),
@@ -784,7 +877,6 @@ async function resolveStreaming(
       throw error;
     }
   };
-  let finished = false;
   return chooseStream(
     {
       ...track,
@@ -792,6 +884,7 @@ async function resolveStreaming(
     },
     {
       resolve: resolveCandidate,
+      signal,
       metadataOnly,
       prepared: (resolved) => {
         try {
@@ -799,11 +892,6 @@ async function resolveStreaming(
         } catch {}
         prepared?.(resolved);
       },
-      warmPrimary: metadataOnly
-        ? undefined
-        : (candidate) => {
-            void resolveCandidate(candidate).catch(() => {});
-          },
       discoverPrimary: async (wanted) => {
         const started = performance.now();
         const artist = trackArtists(wanted)[0] || wanted.artist;
@@ -826,7 +914,7 @@ async function resolveStreaming(
           requests.push(queryLucida(query, "others", true));
         return firstMatchingSources(wanted, requests);
       },
-      discover: async (wanted) => {
+      discover: async (wanted, offer) => {
         const queries = [
           ...new Set(
             trackArtists(wanted)
@@ -835,6 +923,9 @@ async function resolveStreaming(
           ),
         ];
         const jobs = [
+          searchJioSaavn(
+            `${trackArtists(wanted)[0] || wanted.artist} ${wanted.title}`,
+          ),
           ...queries.map((query) => searchExtracted(query)),
           import("./search").then(({ searchAudius }) =>
             searchAudius(
@@ -853,11 +944,28 @@ async function resolveStreaming(
             }, 1200);
           }),
         );
-        return firstMatchingSources(wanted, jobs);
+        const results = await Promise.allSettled(
+          jobs.map((job) =>
+            job.then((tracks) => {
+              if (!finished) offer(tracks);
+              return tracks;
+            }),
+          ),
+        );
+        return results.flatMap((result) =>
+          result.status === "fulfilled" ? result.value : [],
+        );
       },
     },
     excluded,
-  ).finally(() => {
-    finished = true;
-  });
+  )
+    .then((resolved) => {
+      winningUrl = resolved.src;
+      return resolved;
+    })
+    .finally(() => {
+      finished = true;
+      for (const url of files) if (url !== winningUrl) discard(url);
+      if (!winningUrl) signal?.removeEventListener("abort", abort);
+    });
 }

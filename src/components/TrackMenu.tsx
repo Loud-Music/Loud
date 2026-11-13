@@ -11,6 +11,7 @@ import {
   Plus,
   Users,
   ExternalLink,
+  Refresh,
 } from "../icons";
 import type { Playlist, Track } from "../lib/library";
 import { sourceLabel } from "../lib/import";
@@ -31,6 +32,7 @@ interface Props {
   onLink: () => void;
   onPlaylist: (playlist: Playlist) => void;
   onRemove: () => void;
+  onChangeRecording?: () => void;
 }
 
 export default function TrackMenu({
@@ -48,6 +50,7 @@ export default function TrackMenu({
   onLink,
   onPlaylist,
   onRemove,
+  onChangeRecording,
 }: Props) {
   return (
     <Dialog title={track.title} close={close} busy={busy}>
@@ -64,6 +67,12 @@ export default function TrackMenu({
         {favorite ? "Убрать из избранного" : "Добавить в избранное"}
         {favorite && <Check size={17} />}
       </Button>
+      {onChangeRecording && (
+        <Button className="action-row" onClick={onChangeRecording}>
+          <Refresh size={19} />
+          Сменить запись
+        </Button>
+      )}
       <Button className="action-row" onClick={onArtist}>
         <Users size={19} />
         Открыть артиста

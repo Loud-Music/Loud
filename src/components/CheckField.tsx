@@ -1,12 +1,12 @@
 import { Checkbox } from "@animate-ui/react/primitives/radix-ui/checkbox";
-import { Check } from "../icons";
+import { Check, Minus } from "../icons";
 export default function CheckField({
   checked,
   onCheckedChange,
   disabled,
   ...label
 }: {
-  checked: boolean;
+  checked: boolean | "indeterminate";
   onCheckedChange: (value: boolean) => void;
   disabled?: boolean;
   "aria-label"?: string;
@@ -20,7 +20,11 @@ export default function CheckField({
       {...label}
     >
       <Checkbox.Indicator className="check-indicator">
-        <Check size={12} />
+        {checked === "indeterminate" ? (
+          <Minus size={12} />
+        ) : (
+          <Check size={12} />
+        )}
       </Checkbox.Indicator>
     </Checkbox.Root>
   );

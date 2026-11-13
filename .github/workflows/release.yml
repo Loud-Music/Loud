@@ -87,6 +87,10 @@ jobs:
         run: |
           rm -rf -- src-tauri/target/release/bundle
           npm run tauri build -- --bundles deb,appimage
+          deb=(src-tauri/target/release/bundle/deb/*.deb)
+          if [ ! -s "${deb[0]}.sig" ]; then
+            npm run tauri signer sign -- --app-version "$(node -p 'require("./package.json").version')" "${deb[0]}"
+          fi
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -140,6 +144,7 @@ jobs:
           name: Loud-linux
           path: |
             src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/deb/*.deb.sig
             src-tauri/target/release/bundle/appimage/*.AppImage
             src-tauri/target/release/bundle/appimage/*.sig
           if-no-files-found: error
@@ -154,6 +159,6 @@ jobs:
           gh release download "v$version" --pattern latest.json --dir .release/linux
           gh release download "v$version" --pattern SHA256SUMS.txt --dir .release/linux
           node scripts/linux-manifest.mjs
-          gh release upload "v$version" src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/*.sig ".release/linux/Loud-$version-linux-source.tar.gz" .release/linux/SHA256SUMS-linux.txt --clobber
+          gh release upload "v$version" src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/deb/*.deb.sig src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/*.sig ".release/linux/Loud-$version-linux-source.tar.gz" .release/linux/SHA256SUMS-linux.txt --clobber
           gh release upload "v$version" .release/linux/latest.json .release/linux/SHA256SUMS.txt --clobber
           gh release edit "v$version" --draft=false --latest

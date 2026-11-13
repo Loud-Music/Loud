@@ -29,6 +29,8 @@ import type { Track } from "../lib/library";
 import type { OutputStatus } from "../lib/usePlayback";
 import { exclusiveAvailable } from "../lib/usePlayback";
 import MusicTools from "./MusicTools";
+import PlaybackSources from "./PlaybackSources";
+import ProfileBackup from "./ProfileBackup";
 import CacheSettings from "./CacheSettings";
 import DiscordSettings from "./DiscordSettings";
 import CommunityLinks from "./CommunityLinks";
@@ -95,6 +97,7 @@ export default function SettingsDialog({
   volume,
   onVolume,
   accountName,
+  accountId,
   tracks,
   playlistCount,
   onImport,
@@ -117,6 +120,7 @@ export default function SettingsDialog({
   volume: number;
   onVolume: (value: number) => void;
   accountName: string;
+  accountId: string;
   tracks: Track[];
   playlistCount: number;
   onImport: () => void;
@@ -297,6 +301,10 @@ export default function SettingsDialog({
                       <span className="prefs-value">{playlistCount}</span>
                     </Row>
                   </Group>
+                  <ProfileBackup
+                    account={{ id: accountId, name: accountName }}
+                    tracks={tracks}
+                  />
                 </>
               </Tabs.Content>
               <Tabs.Content
@@ -325,13 +333,13 @@ export default function SettingsDialog({
                   </Group>
                   <Group
                     title="Качество аудио"
-                    note="Если FLAC недоступен, Loud выбирает полную запись в MP3 или AAC."
+                    note="Воспроизведение начинается с первой доступной полной записи. Для офлайн-загрузок сохраняется предпочтение FLAC."
                   >
                     <Row
                       title="Предпочитаемый формат"
-                      description="Исходное качество без перекодирования."
+                      description="Без ожидания более тяжёлого источника."
                     >
-                      <span className="prefs-quality">Без потерь</span>
+                      <span className="prefs-quality">Быстрый старт</span>
                     </Row>
                     <Row title="Вывод звука">
                       <SelectField
@@ -392,6 +400,7 @@ export default function SettingsDialog({
                     </Row>
                   </Group>
                   <Equalizer value={equalizer} onChange={onEqualizer} />
+                  <PlaybackSources />
                   <Group title="Текущее устройство">
                     <Row
                       title={

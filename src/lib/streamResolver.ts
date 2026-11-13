@@ -45,11 +45,14 @@ export function sameRecording(wanted: Track, candidate: Track) {
   );
 }
 interface StreamDependencies {
+  signal?: AbortSignal;
   metadataOnly?: boolean;
   resolve: (track: Track) => Promise<Track>;
-  discover: (track: Track) => Promise<Track[]>;
+  discover: (
+    track: Track,
+    offer: (tracks: Track[]) => void,
+  ) => Promise<Track[]>;
   discoverPrimary?: (track: Track) => Promise<Track[]>;
-  warmPrimary?: (track: Track) => void;
   prepared?: (track: Track) => void;
 }
 export function chooseStream(
@@ -58,8 +61,11 @@ export function chooseStream(
   excluded: readonly string[] = [],
 ): Promise<Track> {
   return new Promise((resolve, reject) => {
+    if (dependencies.signal?.aborted) {
+      reject(new DOMException("Подготовка отменена", "AbortError"));
+      return;
+    }
     const seen = new Set(excluded);
-    const attempted = new Set<string>();
     const queue: Track[] = [];
     let amazonRunning = 0;
     let fallbackRunning = 0;
@@ -68,8 +74,7 @@ export function chooseStream(
       primaryDiscovering = !!dependencies.discoverPrimary;
     let settled = false,
       releaseFallback = false,
-      releaseSecondary = false,
-      warmed = false;
+      releaseSecondary = false;
     let best: Track | undefined;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const score = (song: Track) =>
@@ -80,48 +85,33 @@ export function chooseStream(
           : song.format === "AAC"
             ? 2
             : 1;
-    const background = () => {
-      if (
-        warmed ||
-        primaryDiscovering ||
-        best?.format === "FLAC" ||
-        !dependencies.warmPrimary
-      )
-        return;
-      const candidate = queue
-        .filter(
-          (item) =>
-            sourcePriority(item) < 2 &&
-            !attempted.has(item.extractorUrl || item.src || ""),
-        )
-        .sort((a, b) => sourcePriority(a) - sourcePriority(b))[0];
-      if (candidate) {
-        warmed = true;
-        dependencies.warmPrimary(candidate);
-      }
-    };
-    const finish = (value?: Track) => {
+    const abort = () => finish(undefined, true);
+    const finish = (value?: Track, aborted = false) => {
       if (settled) return;
       settled = true;
+      dependencies.signal?.removeEventListener("abort", abort);
       for (const timer of timers) clearTimeout(timer);
       if (value) {
         best = value;
         resolve(value);
-        background();
-      } else
+      } else if (aborted)
+        reject(new DOMException("Подготовка отменена", "AbortError"));
+      else
         reject(
           new Error(
             "Полная запись сейчас недоступна. Попробуйте позже или добавьте локальный файл.",
           ),
         );
     };
+    dependencies.signal?.addEventListener("abort", abort, { once: true });
     const deadline = setTimeout(() => finish(best), 28000);
     timers.add(deadline);
     const drain = () => {
       if (settled) return;
       if (
         best &&
-        (best.format === "FLAC" ||
+        (!dependencies.metadataOnly ||
+          best.format === "FLAC" ||
           (dependencies.metadataOnly && sourcePriority(best) === 0) ||
           releaseFallback)
       )
@@ -132,11 +122,14 @@ export function chooseStream(
           const priority = sourcePriority(item);
           if (priority === 0) return amazonRunning < 1;
           if (priority === 2) return fallbackRunning < 2;
-          return releaseSecondary || (!primaryDiscovering && !amazonRunning);
+          return (
+            !dependencies.metadataOnly ||
+            releaseSecondary ||
+            (!primaryDiscovering && !amazonRunning)
+          );
         });
         if (index < 0) break;
         const candidate = queue.splice(index, 1)[0];
-        attempted.add(candidate.extractorUrl || candidate.src || "");
         running++;
         if (sourcePriority(candidate) === 0) amazonRunning++;
         if (sourcePriority(candidate) === 2) fallbackRunning++;
@@ -224,11 +217,16 @@ export function chooseStream(
         )
         .finally(() => {
           primaryDiscovering = false;
-          if (settled) background();
-          else drain();
+          drain();
         });
     void dependencies
-      .discover(track)
+      .discover(track, (found) => {
+        if (settled) return;
+        found
+          .filter((candidate) => sameRecording(track, candidate))
+          .forEach(add);
+        drain();
+      })
       .then(
         (found) => {
           if (!settled)

@@ -7,6 +7,7 @@ import { searchMixter, searchJamendo } from "./additionalCatalogs";
 import { searchExtracted, searchLucida } from "./extractor";
 import { tasteGenres } from "./recommendations";
 import { loudTracks } from "./loudCatalog";
+import { searchJioSaavn } from "./playbackSources";
 
 export const providers = [
   "Loud",
@@ -18,6 +19,7 @@ export const providers = [
   "Wikimedia",
   "SoundCloud",
   "Lucida",
+  "JioSaavn",
 ] as const;
 export type Provider = (typeof providers)[number];
 interface SearchResult {
@@ -218,6 +220,7 @@ const adapters: Record<Provider, (query: string) => Promise<Track[]>> = {
   Jamendo: searchJamendo,
   SoundCloud: searchExtracted,
   Lucida: searchLucida,
+  JioSaavn: searchJioSaavn,
 };
 
 export function mergeSearch(tracks: Track[], query: string): Track[] {

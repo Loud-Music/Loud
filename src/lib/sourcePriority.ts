@@ -9,7 +9,13 @@ export function sourcePriority(
       track.playbackSource || track.extractorUrl || track.src || "",
     ).hostname;
     if (/^music\.amazon\./.test(host)) return 0;
-    if (host === "soundcloud.com" || host.endsWith(".sndcdn.com")) return 2;
+    if (
+      host === "soundcloud.com" ||
+      host.endsWith(".sndcdn.com") ||
+      host === "www.jiosaavn.com" ||
+      host === "jiosaavn.com"
+    )
+      return 2;
   } catch {}
   return track.source === "Lucida" ? 1 : 2;
 }

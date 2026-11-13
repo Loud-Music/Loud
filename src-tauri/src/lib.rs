@@ -12,6 +12,7 @@ mod offline;
 mod persistence;
 mod resumable;
 mod spicy;
+mod sources;
 mod storage;
 mod stream_proxy;
 use tauri::Manager;
@@ -123,6 +124,11 @@ pub fn run() {
             extractor::extractor_cached,
             extractor::extractor_cache_stream,
             extractor::extractor_stream,
+            stream_proxy::stream_discard,
+            sources::jiosaavn_search,
+            sources::jiosaavn_stream,
+            sources::cobalt_stream,
+            sources::cobalt_status,
             media_tools::ensure_media_tools,
             media_tools::ensure_extractor_tool,
             media_tools::ensure_music_module,

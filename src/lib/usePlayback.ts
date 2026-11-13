@@ -8,7 +8,10 @@ import {
 import type Hls from "hls.js";
 import {
   cachePlayingStream,
+  claimAudio,
+  releaseAudio,
   needsAudioResolution,
+  resolveAlternativeRecording,
   resolveExtracted,
 } from "./extractor";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -78,6 +81,22 @@ export default function usePlayback(
     undefined,
   );
   const [playing, setPlaying] = useState(false);
+  const [recordingRevision, setRecordingRevision] = useState(0);
+  const recordingSource = useRef("");
+  const rejectedSources = useRef<{ id: string; urls: string[] }>({
+    id: "",
+    urls: [],
+  });
+  const recordingSearch = useRef<AbortController | undefined>(undefined);
+  const replacement = useRef<
+    | {
+        id: string;
+        position: number;
+        track: Track;
+        controller: AbortController;
+      }
+    | undefined
+  >(undefined);
   const [duration, setDuration] = useState(track.duration);
   const [volume, setVolume] = useState<number>(() =>
     readSetting("volume", 0.65),
@@ -99,6 +118,55 @@ export default function usePlayback(
   );
   const [gaplessEpoch, setGaplessEpoch] = useState(0);
   const [timelineOffset, setTimelineOffset] = useState(0);
+  const changeRecording = useCallback(async () => {
+    const song = activeTrack.current;
+    if (!needsAudioResolution(song) || recordingSearch.current) return;
+    if (
+      exclusiveAvailable() &&
+      preferExclusive &&
+      !equalizer.enabled &&
+      song.format === "FLAC"
+    ) {
+      notify("Для смены записи выберите системный вывод звука.");
+      return;
+    }
+    const source = recordingSource.current || song.extractorUrl || song.src;
+    const urls =
+      rejectedSources.current.id === song.id
+        ? rejectedSources.current.urls
+        : [];
+    const excluded = [...new Set([...urls, ...(source ? [source] : [])])];
+    const controller = new AbortController();
+    recordingSearch.current = controller;
+    try {
+      const alternative = await resolveAlternativeRecording(
+        song,
+        excluded,
+        controller.signal,
+      );
+      if (controller.signal.aborted || activeTrack.current.id !== song.id)
+        return;
+      rejectedSources.current = { id: song.id, urls: excluded };
+      replacement.current = {
+        id: song.id,
+        position: Math.max(
+          0,
+          (audio.current?.currentTime || 0) -
+            (gaplessSession.current?.active()?.offset || 0),
+        ),
+        track: alternative,
+        controller,
+      };
+      adoptedGapless.current = "";
+      setRecordingRevision((value) => value + 1);
+    } catch {
+      if (!controller.signal.aborted && activeTrack.current.id === song.id)
+        notify("Не удалось найти другую запись этого трека.");
+    } finally {
+      if (recordingSearch.current === controller)
+        recordingSearch.current = undefined;
+    }
+  }, [notify, preferExclusive, equalizer.enabled]);
   const setGapless = useCallback((enabled: boolean) => {
     setGaplessState(enabled);
     saveSetting("gapless:v1", enabled);
@@ -246,7 +314,13 @@ export default function usePlayback(
     session.clearUpcoming();
     let active = true;
     void (async () => {
-      const resolved = await resolveExtracted(nextTrack, true);
+      const resolved = await resolveExtracted(
+        nextTrack,
+        true,
+        [],
+        undefined,
+        true,
+      );
       const resource = await prepareGapless(resolved);
       if (!active || gaplessSession.current !== session) {
         void invoke("gapless_release", { url: resource.url }).catch(() => {});
@@ -358,6 +432,12 @@ export default function usePlayback(
   useEffect(() => {
     const el = audio.current;
     if (!el) return;
+    claimAudio(track);
+    if (rejectedSources.current.id !== track.id) {
+      rejectedSources.current = { id: track.id, urls: [] };
+      replacement.current = undefined;
+      recordingSource.current = "";
+    }
     setError("");
     const adopted = gaplessSession.current?.active();
     if (adoptedGapless.current === track.id && adopted?.track.id === track.id) {
@@ -365,6 +445,8 @@ export default function usePlayback(
       setTimelineOffset(adopted.offset);
       setDuration(adopted.duration);
       setPlaybackFormat(adopted.track.format);
+      recordingSource.current =
+        adopted.track.playbackSource || adopted.track.extractorUrl || "";
       recover.current = undefined;
       if (isDesktop())
         void invoke("audio_cache_pin", {
@@ -413,13 +495,16 @@ export default function usePlayback(
       if (isDesktop())
         void invoke("exclusive_control", { action: "stop" }).catch(() => {});
       setPreparing(true);
-      const failed: string[] = [];
+      const failed: string[] = [...rejectedSources.current.urls];
       let selected = "",
         attempts = 0,
         switching = false;
       let sourceAttempt = 0;
       let removeReady = () => {};
-      let resumePosition = 0;
+      const nextRecording =
+        replacement.current?.id === track.id ? replacement.current : undefined;
+      replacement.current = undefined;
+      let resumePosition = nextRecording?.position ?? 0;
       const load = async (): Promise<Track> => {
         if (switching) throw new Error("Stream is already switching");
         const request = ++sourceAttempt;
@@ -430,26 +515,24 @@ export default function usePlayback(
         setPreparing(true);
         clearTimeout(stallTimer.current);
         try {
-          const resolved = await resolveExtracted(
-            track,
-            true,
-            failed,
-            (candidate) => {
-              if (
-                !current() ||
-                candidate.streamType ||
-                !candidate.src ||
-                candidate.format === "FLAC" ||
-                !el.paused
-              )
-                return;
-              if (el.getAttribute("src") !== candidate.src) {
-                el.preload = "auto";
-                el.src = candidate.src;
-                el.load();
-              }
-            },
-          );
+          const resolved =
+            request === 1 && nextRecording
+              ? nextRecording.track
+              : await resolveExtracted(track, true, failed, (candidate) => {
+                  if (
+                    !current() ||
+                    candidate.streamType ||
+                    !candidate.src ||
+                    candidate.format === "FLAC" ||
+                    !el.paused
+                  )
+                    return;
+                  if (el.getAttribute("src") !== candidate.src) {
+                    el.preload = "auto";
+                    el.src = candidate.src;
+                    el.load();
+                  }
+                });
           if (!current()) return resolved;
           if (isDesktop())
             void invoke("audio_cache_pin", {
@@ -461,6 +544,7 @@ export default function usePlayback(
             resolved.extractorUrl ||
             resolved.src ||
             "";
+          recordingSource.current = selected;
           switching = false;
           remotePlayback.current =
             !!resolved.streamType ||
@@ -496,12 +580,14 @@ export default function usePlayback(
                   if (current() && !cancelledPlay(error) && !mediaPlaying(el))
                     recover.current?.();
                 });
+            else setPreparing(false);
           };
           if (desiredPlaying.current)
             stallTimer.current = setTimeout(() => {
               if (current()) recover.current?.();
             }, 8000);
-          if (await startGapless(resolved, token, ready)) return resolved;
+          if (!resumePosition && (await startGapless(resolved, token, ready)))
+            return resolved;
           const HlsPlayer =
             resolved.streamType === "hls"
               ? (await import("hls.js")).default
@@ -604,6 +690,9 @@ export default function usePlayback(
       loadingAudio.current = pending;
       void pending.catch(fail);
       return () => {
+        recordingSearch.current?.abort();
+        recordingSearch.current = undefined;
+        nextRecording?.controller.abort();
         removeReady();
         sourceAttempt++;
       };
@@ -656,7 +745,7 @@ export default function usePlayback(
         );
       });
     }
-  }, [track.id, track.src, exclusive, isCurrent]);
+  }, [track.id, track.src, exclusive, isCurrent, recordingRevision]);
   useEffect(() => {
     if (!exclusive) return;
     let active = true,
@@ -710,6 +799,7 @@ export default function usePlayback(
   useEffect(
     () => () => {
       ++generation.current;
+      releaseAudio(activeTrack.current);
       gaplessSession.current?.close();
       recover.current = undefined;
       clearTimeout(stallTimer.current);
@@ -790,6 +880,7 @@ export default function usePlayback(
     } else {
       hls.current?.stopLoad();
       audio.current?.pause();
+      if (audio.current?.currentSrc) setPreparing(false);
     }
     setPlaying(false);
   }, [exclusive, preparing]);
@@ -970,5 +1061,6 @@ export default function usePlayback(
     pause,
     seek,
     togglePlay,
+    changeRecording,
   };
 }

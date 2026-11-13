@@ -59,6 +59,9 @@ pub fn offline_pause(account: String, id: String) -> Result<(), String> {
     Ok(())
 }
 fn allowed(url: &reqwest::Url) -> bool {
+    if crate::sources::stream_url_allowed(url) {
+        return true;
+    }
     url.scheme() == "https"
         && url.port_or_known_default() == Some(443)
         && url.username().is_empty()

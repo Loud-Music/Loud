@@ -4,6 +4,7 @@ import { readSetting, saveSetting, storeTracks, type Track } from "./library";
 import type { Feedback } from "./recommendations";
 import { cachedCatalogTracks, deezerTrack } from "./artists";
 import { appleTrack } from "./appleCatalog";
+import { flushPersistence } from "./persistence";
 
 export default function useFavorites(
   tracks: Track[],
@@ -24,10 +25,21 @@ export default function useFavorites(
   const [recovering, setRecovering] = useState(false);
   const [revision, setRevision] = useState(0);
   const saving = useRef(new Set<string>());
+  const favoriteState = useRef(favorites);
   const currentTracks = useRef(tracks);
   currentTracks.current = tracks;
 
-  useEffect(() => saveSetting("favorites", favorites), [favorites]);
+  useEffect(() => saveSetting("favorites", favoriteState.current), []);
+  const updateFavorites = useCallback(
+    async (update: (ids: string[]) => string[]) => {
+      const next = update(favoriteState.current);
+      saveSetting("favorites", next);
+      favoriteState.current = next;
+      setFavorites(next);
+      await flushPersistence();
+    },
+    [],
+  );
   useEffect(() => {
     const retry = () => setRevision((old) => old + 1);
     window.addEventListener("online", retry);
@@ -37,7 +49,7 @@ export default function useFavorites(
   const toggleFavorite = useCallback(
     async (id: string, candidate?: Track) => {
       if (saving.current.has(id)) return;
-      const liked = favorites.includes(id);
+      const liked = favoriteState.current.includes(id);
       const track =
         tracks.find((track) => track.id === id) ||
         (selected?.id === id ? selected : undefined) ||
@@ -53,12 +65,12 @@ export default function useFavorites(
           await storeTracks([{ track: saved }]);
           setTracks((old) => [...old.filter((item) => item.id !== id), saved]);
         }
-        if (track) feedback(track, liked ? "unlike" : "like");
-        setFavorites((old) =>
+        await updateFavorites((old) =>
           liked
             ? old.filter((item) => item !== id)
             : [...new Set([...old, id])],
         );
+        if (track) feedback(track, liked ? "unlike" : "like");
       } catch {
         notify(
           "Не удалось сохранить избранное. Проверьте свободное место на диске.",
@@ -67,7 +79,41 @@ export default function useFavorites(
         saving.current.delete(id);
       }
     },
-    [favorites, tracks, selected, feedback, notify, setTracks],
+    [tracks, selected, feedback, notify, setTracks, updateFavorites],
+  );
+  const setFavoriteMany = useCallback(
+    async (items: Track[], liked: boolean) => {
+      const unique = [
+        ...new Map(items.map((track) => [track.id, track])).values(),
+      ];
+      if (unique.some((track) => saving.current.has(track.id)))
+        throw new Error("Дождитесь сохранения избранного.");
+      for (const track of unique) saving.current.add(track.id);
+      try {
+        if (liked) {
+          const saved = unique.map((track) => ({ ...track, inLibrary: true }));
+          await storeTracks(saved.map((track) => ({ track })));
+          setTracks((old) => [
+            ...new Map(
+              [...old, ...saved].map((track) => [track.id, track]),
+            ).values(),
+          ]);
+        }
+        const ids = new Set(unique.map((track) => track.id));
+        const changed = unique.filter(
+          (track) => favoriteState.current.includes(track.id) !== liked,
+        );
+        await updateFavorites((old) =>
+          liked
+            ? [...new Set([...old, ...ids])]
+            : old.filter((id) => !ids.has(id)),
+        );
+        for (const track of changed) feedback(track, liked ? "like" : "unlike");
+      } finally {
+        for (const track of unique) saving.current.delete(track.id);
+      }
+    },
+    [setTracks, feedback, updateFavorites],
   );
 
   useEffect(() => {
@@ -120,5 +166,12 @@ export default function useFavorites(
     (id) => !tracks.some((track) => track.id === id),
   ).length;
   const retry = useCallback(() => setRevision((old) => old + 1), []);
-  return { favorites, toggleFavorite, recovering, missing, retry };
+  return {
+    favorites,
+    toggleFavorite,
+    setFavoriteMany,
+    recovering,
+    missing,
+    retry,
+  };
 }

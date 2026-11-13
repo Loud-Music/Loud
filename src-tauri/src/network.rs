@@ -476,10 +476,10 @@ pub fn audio_origin(request: &str) -> &str {
         .find_map(|(name, value)| {
             let origin = value.trim();
             (name.eq_ignore_ascii_case("origin")
-                && matches!(
+                && (matches!(
                     origin,
                     "http://tauri.localhost" | "https://tauri.localhost" | "tauri://localhost"
-                ))
+                ) || (cfg!(debug_assertions) && origin == "http://127.0.0.1:1420")))
             .then_some(origin)
         })
         .unwrap_or("http://tauri.localhost")

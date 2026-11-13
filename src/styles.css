@@ -356,7 +356,7 @@ h1 {
 .track-row {
   display: grid;
   grid-template-columns:
-    26px minmax(180px, 1.8fr) minmax(120px, 1fr)
+    var(--track-leading, 26px) minmax(180px, 1.8fr) minmax(120px, 1fr)
     110px 44px 67px;
   gap: 10px;
   align-items: center;
@@ -1042,7 +1042,7 @@ input[type="range"]::-moz-range-thumb {
   .track-table-head,
   .track-row {
     grid-template-columns:
-      22px minmax(140px, 1.8fr) minmax(90px, 1fr)
+      var(--track-leading, 22px) minmax(140px, 1.8fr) minmax(90px, 1fr)
       85px 35px 57px;
     gap: 7px;
     padding: 0 7px;
@@ -1122,7 +1122,7 @@ input[type="range"]::-moz-range-thumb {
   }
   .track-table-head,
   .track-row {
-    grid-template-columns: 22px minmax(140px, 1fr) 82px 32px 57px;
+    grid-template-columns: var(--track-leading, 22px) minmax(140px, 1fr) 82px 32px 57px;
     gap: 6px;
   }
   .track-table .album-column {
@@ -1178,7 +1178,7 @@ input[type="range"]::-moz-range-thumb {
   }
   .track-table-head,
   .track-row {
-    grid-template-columns: 20px minmax(100px, 1fr) 34px 28px;
+    grid-template-columns: var(--track-leading, 20px) minmax(100px, 1fr) 34px 28px;
     gap: 7px;
     padding: 0 4px;
   }
@@ -1297,7 +1297,7 @@ input[type="range"]::-moz-range-thumb {
   }
   .track-table-head,
   .track-row {
-    grid-template-columns: 17px minmax(95px, 1fr) 29px 25px;
+    grid-template-columns: var(--track-leading, 17px) minmax(95px, 1fr) 29px 25px;
     gap: 5px;
   }
   .track-info strong {
@@ -2332,6 +2332,15 @@ input[type="radio"] {
   content-visibility: auto;
   contain-intrinsic-size: auto 56px;
 }
+.track-table.is-selectable { --track-leading: 58px; }
+.row-leading { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; }
+.row-leading > .check-field { flex-shrink: 0; }
+.track-row.is-selected { background: var(--selection); box-shadow: inset 2px 0 var(--accent-ink); }
+.track-row[data-selection-row] { user-select: none; }
+.track-row[data-selection-row]:focus-visible { outline: 1px solid var(--accent-ink); outline-offset: -1px; }
+.track-selection-bar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 10px; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; margin-bottom: 12px; }
+.track-selection-bar > strong { margin-right: auto; font-size: 12px; }
+.selection-error { flex-basis: 100%; font-size: 12px; margin: 0; }
 
 .modal-backdrop.animate-modal,
 .modal-backdrop.animate-modal > * {

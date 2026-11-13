@@ -48,13 +48,17 @@ import PlaylistDialog from "./components/PlaylistDialog";
 import QueuePanel from "./components/QueuePanel";
 import Sidebar from "./components/Sidebar";
 import TrackMenu from "./components/TrackMenu";
-import TrackTable from "./components/TrackTable";
+import TrackTable, { type BulkTrackAction } from "./components/TrackTable";
 import Wave from "./components/Wave";
 import type { LocalAccount } from "./lib/accounts";
 import { albumRoute, parseAlbumRoute } from "./lib/albums";
 import { connectApple } from "./lib/apple";
 import { artistKey, isArtist, type Artist } from "./lib/artists";
-import { prefetchAudio } from "./lib/extractor";
+import {
+  prepareQueue,
+  prefetchAudio,
+  needsAudioResolution,
+} from "./lib/extractor";
 import { importLibrary } from "./lib/import";
 import { importSoundCloud } from "./lib/soundcloudImport";
 import { flushPersistence } from "./lib/persistence";
@@ -176,6 +180,7 @@ export default function App({
   const {
     favorites,
     toggleFavorite,
+    setFavoriteMany,
     recovering: recoveringFavorites,
     missing: missingFavorites,
     retry: retryFavorites,
@@ -207,6 +212,7 @@ export default function App({
     pause,
     seek,
     togglePlay,
+    changeRecording,
   } = usePlayback(current, notify, onEnded, gaplessNext);
   useDiscordPresence(current, playing, duration);
   const deferredOffline = useRef(new Map<string, Track>());
@@ -242,18 +248,26 @@ export default function App({
     )
     .join("\n");
   const nextLyricsId = queue[queue.indexOf(currentId) + 1];
+  useEffect(() => () => prepareQueue([]), []);
   useEffect(() => {
     for (const id of nextQueueIds.split("\n")) {
       const upcoming = tracks.find((item) => item.id === id);
       if (upcoming) prepareLyrics(upcoming, true);
     }
-  }, [nextQueueIds]);
+    if (playing && !shuffle && !audioLoading)
+      prepareQueue(
+        nextQueueIds
+          .split("\n")
+          .slice(0, 2)
+          .flatMap((id) => trackIndex.byId.get(id) || []),
+      );
+    else prepareQueue([]);
+  }, [nextQueueIds, playing, shuffle, audioLoading]);
   const prepareNextLyrics = !!currentId;
   useEffect(() => {
     if (!prepareNextLyrics || !nextLyricsId) return;
     const next = tracks.find((track) => track.id === nextLyricsId);
     if (!next) return;
-    if (playing) prefetchAudio(next);
     void loadKaraoke(next).catch(() => {});
     void loadLyrics(next).catch(() => {});
   }, [nextLyricsId, prepareNextLyrics, playing]);
@@ -266,7 +280,7 @@ export default function App({
           setTracks(
             saved.filter(
               (t) =>
-                t.source !== "Loud" &&
+                (t.source !== "Loud" || !!t.loudArtistIds?.length) &&
                 (t.source !== "SoundCloud" || !!t.extractorUrl) &&
                 !t.preview,
             ),
@@ -713,6 +727,72 @@ export default function App({
       notify(errorMessage(error));
     } finally {
       setDownloading(null);
+    }
+  }
+  async function bulkAction(
+    action: BulkTrackAction,
+    items: Track[],
+    playlistId?: string,
+  ) {
+    const ids = new Set(items.map((track) => track.id));
+    if (action === "favorite" || action === "unfavorite") {
+      await setFavoriteMany(items, action === "favorite");
+      notify(
+        `${action === "favorite" ? "Добавлено в избранное" : "Убрано из избранного"}: ${items.length}.`,
+      );
+    } else if (action === "download") {
+      const available = items.filter(
+        (track) =>
+          !track.availableAt &&
+          track.downloadAllowed !== false &&
+          (track.src || track.extractorUrl),
+      );
+      if (!available.length)
+        throw new Error("Выбранные записи недоступны для скачивания.");
+      await offline.enqueue(
+        {
+          id: `selection:${crypto.randomUUID()}`,
+          name: "Выбранные треки",
+          kind: "tracks",
+          tracks: available.map((track) => track.id),
+        },
+        available,
+      );
+      notify(
+        `В очередь загрузки добавлено: ${available.length}.${available.length < items.length ? ` Недоступно: ${items.length - available.length}.` : ""}`,
+      );
+    } else if (action === "queue") {
+      const available = items.filter(
+        (track) => !track.availableAt && (track.src || track.extractorUrl),
+      );
+      if (!available.length)
+        throw new Error("Выбранные записи недоступны для воспроизведения.");
+      setQueue((old) => [...old, ...available.map((track) => track.id)]);
+      notify(`В очередь добавлено: ${available.length}.`);
+    } else {
+      const target =
+        action === "remove"
+          ? playlist
+          : playlists.find((item) => item.id === playlistId);
+      if (!target) throw new Error("Плейлист не найден.");
+      if (action === "playlist") await addCatalogTracks(items, false);
+      const next = playlists.map((item) =>
+        item.id === target.id
+          ? {
+              ...item,
+              tracks:
+                action === "remove"
+                  ? item.tracks.filter((id) => !ids.has(id))
+                  : [...new Set([...item.tracks, ...ids])],
+            }
+          : item,
+      );
+      saveSetting("playlists", next);
+      await flushPersistence();
+      setPlaylists(next);
+      notify(
+        `${action === "remove" ? "Убрано из" : "Добавлено в"} «${target.name}»: ${items.length}.`,
+      );
     }
   }
   async function handleApple() {
@@ -1392,6 +1472,7 @@ export default function App({
                   </div>
                 ) : (
                   <TrackTable
+                    key={view}
                     list={visible}
                     currentId={currentId}
                     playing={playing}
@@ -1400,6 +1481,9 @@ export default function App({
                     openArtist={openArtist}
                     toggleFavorite={toggleFavorite}
                     setSelected={setSelected}
+                    playlists={playlists}
+                    inPlaylist={!!playlist}
+                    onBulk={bulkAction}
                   />
                 )}
               </>
@@ -1509,6 +1593,7 @@ export default function App({
             volume={volume}
             onVolume={setVolume}
             accountName={account.name}
+            accountId={account.id}
             tracks={libraryTracks}
             playlistCount={playlists.length}
             onImport={() => setModal("import")}
@@ -1530,6 +1615,16 @@ export default function App({
           inPlaylist={!!playlist}
           close={() => setSelected(null)}
           onFavorite={() => toggleFavorite(selected.id)}
+          onChangeRecording={
+            selected.id === currentId &&
+            needsAudioResolution(selected) &&
+            !audioLoading
+              ? () => {
+                  changeRecording();
+                  setSelected(null);
+                }
+              : undefined
+          }
           onArtist={() => openArtist(selected.artist)}
           onDownload={() => {
             void saveDownload(selected);

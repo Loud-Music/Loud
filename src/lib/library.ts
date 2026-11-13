@@ -15,7 +15,8 @@ export type Source =
   | "Deezer"
   | "SoundCloud"
   | "YouTube Music"
-  | "Lucida";
+  | "Lucida"
+  | "JioSaavn";
 interface AudioCandidate {
   url: string;
   service?: string;
@@ -244,7 +245,14 @@ async function saveNativeTracks(
   account: string,
   items: { track: Track; blob?: Blob }[],
 ) {
+  const metadata = items.filter((item) => !item.blob);
+  if (metadata.length)
+    await invoke("library_save", {
+      account,
+      items: metadata.map((item) => ({ track: item.track })),
+    });
   for (const item of items) {
+    if (!item.blob) continue;
     const data = item.blob
       ? await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
