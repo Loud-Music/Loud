@@ -1,6 +1,12 @@
 import RangeField from "./RangeField";
 import { Button } from "@animate-ui/react/primitives/buttons/button";
-import { useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+  type RefObject,
+} from "react";
 import {
   Heart,
   Shuffle,
@@ -49,6 +55,7 @@ type Props = Pick<
   setLyricsOpen: Dispatch<SetStateAction<boolean>>;
   setQueueOpen: Dispatch<SetStateAction<boolean>>;
   onSettings: () => void;
+  artworkRef?: RefObject<HTMLImageElement | null>;
 };
 export default function Player({
   playing,
@@ -76,6 +83,7 @@ export default function Player({
   openArtist,
   toggleFavorite,
   onSettings,
+  artworkRef,
 }: Props) {
   return (
     <footer
@@ -94,7 +102,11 @@ export default function Player({
           onClick={() => openAlbum(current)}
           aria-label="Открыть текущий альбом"
         >
-          <img src={current.cover} alt="Обложка текущего альбома" />
+          <img
+            ref={artworkRef}
+            src={current.cover}
+            alt="Обложка текущего альбома"
+          />
         </Button>
         <div className="now-info" key={current.id}>
           <strong>{current.title}</strong>

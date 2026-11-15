@@ -12,18 +12,50 @@
   background: var(--bg);
   border: 0;
   box-shadow: none;
-  animation: none;
   padding-bottom: 104px;
 }
-.lyrics-panel::before {
+.artwork-transition {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 512px;
+  height: 512px;
+  z-index: 110;
+  visibility: hidden;
+  pointer-events: none;
+  object-fit: cover;
+  transform-origin: top left;
+}
+.lyrics-panel::after {
   content: "";
   position: absolute;
-  inset: -80px;
+  inset: 0;
   z-index: -1;
-  background: var(--lyrics-art) center / cover;
-  filter: blur(70px) saturate(0.7);
-  opacity: 0.14;
+  background:
+    linear-gradient(90deg, #07090e18 20%, #07090e80 58%, #07090e99),
+    linear-gradient(0deg, var(--bg), transparent 28%, #07090e20);
   pointer-events: none;
+}
+.lyrics-panel .lyrics-shader {
+  inset: 0;
+  height: 100%;
+  z-index: -2;
+  mask-image: none;
+  -webkit-mask-image: none;
+  opacity: 1;
+}
+.lyrics-shader canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.lyrics-panel .lyrics-shader.wave-shader-disabled {
+  display: none;
+}
+[data-theme="light"] .lyrics-panel::after {
+  background:
+    linear-gradient(90deg, #ffffff70, #ffffffad 62%, #ffffffc2),
+    linear-gradient(0deg, var(--bg), transparent 28%);
 }
 .lyrics-panel > header {
   display: flex;
@@ -35,7 +67,8 @@
 }
 .lyrics-panel h2 {
   margin: 0;
-  color: var(--muted);
+  color: var(--text);
+  opacity: 0.72;
   font-size: 13px;
   font-weight: 500;
 }
@@ -79,7 +112,8 @@
 }
 .lyrics-recording p {
   margin: 0;
-  color: var(--muted);
+  color: var(--text);
+  opacity: 0.72;
   font-size: 16px;
 }
 .lyrics-panel .lyrics-scroll {
@@ -94,6 +128,11 @@
   font-weight: 650;
   line-height: 1.25;
   padding-block: 16px;
+}
+.lyrics-panel .lyrics-lines button.secondary {
+  font-size: clamp(20px, 2.1vw, 30px);
+  font-weight: 500;
+  padding-block: 10px;
 }
 .lyrics-panel .lyrics-plain {
   font-size: clamp(25px, 2.5vw, 38px);
@@ -129,5 +168,12 @@
   }
   .lyrics-panel .lyrics-lines {
     padding-top: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyrics-panel,
+  .lyrics-recording > img {
+    transition: none;
+    transform: none;
   }
 }

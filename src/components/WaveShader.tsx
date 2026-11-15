@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import type { EqualizerGraph } from "../lib/equalizer";
-import { waveFragment, waveVertex } from "../lib/waveShader";
+import { lyricsFragment, waveFragment, waveVertex } from "../lib/waveShader";
 import {
   coverPalette,
   neutralPalette,
@@ -16,6 +16,7 @@ interface Props {
   nativeLevel: number;
   nativeBass: number;
   cover: string;
+  variant?: "wave" | "lyrics";
 }
 
 export default function WaveShader({
@@ -26,6 +27,7 @@ export default function WaveShader({
   nativeLevel,
   nativeBass,
   cover,
+  variant = "wave",
 }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const signal = useRef({ playing, exclusive, nativeLevel, nativeBass });
@@ -118,7 +120,10 @@ export default function WaveShader({
     };
     if (
       !compile(gl.VERTEX_SHADER, waveVertex) ||
-      !compile(gl.FRAGMENT_SHADER, waveFragment)
+      !compile(
+        gl.FRAGMENT_SHADER,
+        variant === "lyrics" ? lyricsFragment : waveFragment,
+      )
     ) {
       dispose();
       setFallback(true);
@@ -225,8 +230,14 @@ export default function WaveShader({
         Math.max(0, low - averageBass * 1.1 - 0.06) * 0.6;
       pulse = Math.max(pulse * Math.exp(-dt / 0.22), Math.min(1, onset));
       previousBass = low;
-      if (state.playing && !motion.matches)
-        clock += dt * (0.7 + energy * 0.6 + bass * 1.25 + pulse * 0.6);
+      const moving = !motion.matches && (state.playing || variant === "lyrics");
+      if (moving)
+        clock +=
+          dt *
+          ((variant === "lyrics" ? (state.playing ? 1 : 0.55) : 0.7) +
+            energy * 0.6 +
+            bass * 1.25 +
+            pulse * 0.6);
       let transitioning = energy > 0.003 || bass > 0.003 || pulse > 0.003;
       for (let color = 0; color < 3; color++) {
         for (let channel = 0; channel < 3; channel++) {
@@ -250,7 +261,7 @@ export default function WaveShader({
       gl.uniform1f(uniforms.bass, bass);
       gl.uniform1f(uniforms.pulse, motion.matches ? 0 : pulse);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      if ((state.playing && !motion.matches) || transitioning) {
+      if (moving || transitioning) {
         timer = setTimeout(
           () => {
             timer = undefined;
@@ -307,11 +318,11 @@ export default function WaveShader({
       motion.removeEventListener("change", wake);
       dispose();
     };
-  }, [audioGraph, enabled, generation]);
+  }, [audioGraph, enabled, generation, variant]);
 
   return (
     <div
-      className={`wave-shader ${!enabled ? "wave-shader-disabled" : fallback ? "wave-shader-fallback" : ""}`}
+      className={`wave-shader ${variant === "lyrics" ? "lyrics-shader" : ""} ${!enabled ? "wave-shader-disabled" : fallback ? "wave-shader-fallback" : ""}`}
       style={
         fallback && enabled
           ? {

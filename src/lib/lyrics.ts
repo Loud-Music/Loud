@@ -12,9 +12,41 @@ interface LyricWord {
 }
 export interface LyricLine {
   end?: number;
+  secondary?: boolean;
   words?: LyricWord[];
   time: number;
   text: string;
+}
+export function separateLyricVoices(lines: LyricLine[]): LyricLine[] {
+  return lines
+    .flatMap((line) => {
+      if (!line.words?.length) return [line];
+      const groups: NonNullable<LyricLine["words"]>[] = [[]];
+      for (const word of line.words) {
+        let group = groups[groups.length - 1];
+        if (group.length && word.time < group[group.length - 1].time - 0.001) {
+          group = [];
+          groups.push(group);
+        }
+        group.push(word);
+      }
+      if (groups.length === 1) return [line];
+      return groups.map((words, index) => ({
+        ...line,
+        time: words[0].time,
+        end:
+          words[words.length - 1].end === undefined
+            ? line.end
+            : Math.max(...words.map((word) => word.end ?? word.time)),
+        text: words
+          .map((word) => word.text)
+          .join("")
+          .trim(),
+        words,
+        secondary: line.secondary || index > 0,
+      }));
+    })
+    .sort((a, b) => a.time - b.time);
 }
 export interface Lyrics {
   id: number;

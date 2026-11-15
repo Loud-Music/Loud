@@ -20,6 +20,7 @@ import type { TasteProfile } from "../lib/recommendations";
 import type { Track } from "../lib/library";
 export default function Wave({
   potato,
+  obscured = false,
   profile,
   onChange,
   onStart,
@@ -40,6 +41,7 @@ export default function Wave({
   nativeBass,
 }: {
   potato: boolean;
+  obscured?: boolean;
   profile: TasteProfile;
   onChange: (patch: Partial<TasteProfile>) => void;
   onStart: () => void;
@@ -64,7 +66,7 @@ export default function Wave({
     <Collapsible.Root asChild open={settings} onOpenChange={setSettings}>
       <section className="wave-view">
         <WaveShader
-          enabled={!potato}
+          enabled={!potato && !obscured}
           audioGraph={audioGraph}
           playing={playing}
           exclusive={exclusive}

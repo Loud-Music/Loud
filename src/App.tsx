@@ -1,5 +1,7 @@
 import { SidebarProvider, SidebarTrigger } from "./components/ui/sidebar";
 import { Button } from "@animate-ui/react/primitives/buttons/button";
+import { AnimatePresence } from "motion/react";
+import ArtworkTransition from "./components/ArtworkTransition";
 import { errorMessage } from "./lib/errors";
 import {
   Download,
@@ -130,6 +132,8 @@ export default function App({
   const [repeat, setRepeat] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [lyricsOpen, setLyricsOpen] = useState(false);
+  const playerArtwork = useRef<HTMLImageElement>(null);
+  const lyricsArtwork = useRef<HTMLImageElement>(null);
   const [modal, setModal] = useState<Modal>(null);
   const [selected, setSelected] = useState<Track | null>(null);
   const [playlistName, setPlaylistName] = useState("");
@@ -1174,6 +1178,7 @@ export default function App({
             ))}
           {view === "Моя волна" && (
             <Wave
+              obscured={lyricsOpen}
               potato={performanceMode === "potato"}
               audioGraph={audioGraph}
               exclusive={exclusive}
@@ -1489,19 +1494,29 @@ export default function App({
               </>
             )}
         </main>
-        {lyricsOpen && (
-          <LyricsPanel
-            timelineOffset={timelineOffset}
-            track={current}
-            playing={playing}
-            audio={exclusive ? undefined : audio}
-            seek={seek}
-            close={() => setLyricsOpen(false)}
-          />
-        )}
+        <AnimatePresence initial={false}>
+          {lyricsOpen && (
+            <LyricsPanel
+              key="lyrics"
+              artworkRef={lyricsArtwork}
+              timelineOffset={timelineOffset}
+              track={current}
+              playing={playing}
+              audio={exclusive ? undefined : audio}
+              audioGraph={audioGraph}
+              effectsEnabled={performanceMode !== "potato"}
+              exclusive={exclusive}
+              nativeLevel={output.level ?? 0}
+              nativeBass={output.bass ?? 0}
+              seek={seek}
+              close={() => setLyricsOpen(false)}
+            />
+          )}
+        </AnimatePresence>
       </div>
 
       <Player
+        artworkRef={playerArtwork}
         playing={playing}
         current={current}
         favorites={favorites}
@@ -1527,6 +1542,13 @@ export default function App({
         openArtist={openArtist}
         toggleFavorite={toggleFavorite}
         onSettings={() => setModal("settings")}
+      />
+      <ArtworkTransition
+        open={lyricsOpen}
+        cover={current.cover}
+        source={playerArtwork}
+        destination={lyricsArtwork}
+        enabled={performanceMode !== "potato"}
       />
       <PlaybackSetup />
       <audio ref={audio} preload="metadata" {...audioProps} />
